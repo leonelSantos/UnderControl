@@ -18,6 +18,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAccountBalances: () => ipcRenderer.invoke('db:getAccountBalances'),
   updateAccountBalance: (accountType, balance) => ipcRenderer.invoke('db:updateAccountBalance', accountType, balance),
   
+  // Debt account methods (new)
+  addDebtAccount: (accountData) => ipcRenderer.invoke('db:addDebtAccount', accountData),
+  updateDebtAccount: (id, accountData) => ipcRenderer.invoke('db:updateDebtAccount', id, accountData),
+  deleteDebtAccount: (id) => ipcRenderer.invoke('db:deleteDebtAccount', id),
+  
   // Monthly budget methods
   getMonthlyBudget: () => ipcRenderer.invoke('db:getMonthlyBudget'),
   addBudgetItem: (budgetItem) => ipcRenderer.invoke('db:addBudgetItem', budgetItem),

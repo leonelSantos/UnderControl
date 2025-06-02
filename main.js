@@ -7,6 +7,9 @@ const {
   db, 
   getAccountBalances, 
   updateAccountBalance,
+  addDebtAccount,
+  updateDebtAccount,
+  deleteDebtAccount,
   getMonthlyBudget,
   addBudgetItem,
   updateBudgetItem,
@@ -162,6 +165,19 @@ ipcMain.handle('db:getAccountBalances', async () => {
 
 ipcMain.handle('db:updateAccountBalance', async (event, accountType, balance) => {
   return await updateAccountBalance(accountType, balance);
+});
+
+// New debt account handlers
+ipcMain.handle('db:addDebtAccount', async (event, accountData) => {
+  return await addDebtAccount(accountData);
+});
+
+ipcMain.handle('db:updateDebtAccount', async (event, id, accountData) => {
+  return await updateDebtAccount(id, accountData);
+});
+
+ipcMain.handle('db:deleteDebtAccount', async (event, id) => {
+  return await deleteDebtAccount(id);
 });
 
 // Monthly budget handlers

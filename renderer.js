@@ -111,6 +111,15 @@ function setupEventListeners() {
     });
   }
 
+  // Debt form
+  const debtForm = document.getElementById('debt-form');
+  if (debtForm) {
+    debtForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await saveDebtAccount();
+    });
+  }
+
   // Analytics controls
   const chartType = document.getElementById('chart-type');
   const timePeriod = document.getElementById('time-period');
@@ -177,11 +186,26 @@ function updateDashboard() {
   const checkingBalance = accountBalances.find(acc => acc.account_type === 'checking')?.balance || 0;
   const savingsBalance = accountBalances.find(acc => acc.account_type === 'savings')?.balance || 0;
   
+  // Calculate total debt
+  const totalDebt = accountBalances
+    .filter(acc => acc.account_type === 'credit_card' || acc.account_type === 'student_loan')
+    .reduce((sum, acc) => sum + acc.balance, 0);
+  
+  // Calculate net worth (assets - debts)
+  const netWorth = (checkingBalance + savingsBalance) - totalDebt;
+  
   const checkingEl = document.getElementById('checking-balance');
   const savingsEl = document.getElementById('savings-balance');
+  const totalDebtEl = document.getElementById('total-debt');
+  const netWorthEl = document.getElementById('net-worth');
   
-  if (checkingEl) checkingEl.textContent = `$${checkingBalance.toFixed(2)}`;
-  if (savingsEl) savingsEl.textContent = `$${savingsBalance.toFixed(2)}`;
+  if (checkingEl) checkingEl.textContent = `${checkingBalance.toFixed(2)}`;
+  if (savingsEl) savingsEl.textContent = `${savingsBalance.toFixed(2)}`;
+  if (totalDebtEl) totalDebtEl.textContent = `${totalDebt.toFixed(2)}`;
+  if (netWorthEl) {
+    netWorthEl.textContent = `${netWorth.toFixed(2)}`;
+    netWorthEl.className = `amount ${netWorth >= 0 ? 'income' : 'expense'}`;
+  }
 
   // Calculate budget totals
   const budgetIncome = monthlyBudget
@@ -191,17 +215,6 @@ function updateDashboard() {
   const budgetExpenses = monthlyBudget
     .filter(item => item.type === 'expense')
     .reduce((sum, item) => sum + item.amount, 0);
-
-  const budgetNet = budgetIncome - budgetExpenses;
-
-  const budgetTotalEl = document.getElementById('monthly-budget-total');
-  const budgetRemainingEl = document.getElementById('budget-remaining');
-  
-  if (budgetTotalEl) budgetTotalEl.textContent = `$${budgetIncome.toFixed(2)}`;
-  if (budgetRemainingEl) {
-    budgetRemainingEl.textContent = `$${budgetNet.toFixed(2)}`;
-    budgetRemainingEl.className = `amount ${budgetNet >= 0 ? 'income' : 'expense'}`;
-  }
 
   // Update overview chart
   if (typeof Chart !== 'undefined') {
@@ -213,10 +226,10 @@ function updateDashboard() {
       charts.overview = new Chart(ctx, {
         type: 'doughnut',
         data: {
-          labels: ['Checking', 'Savings', 'Budget Income', 'Budget Expenses'],
+          labels: ['Assets', 'Debts'],
           datasets: [{
-            data: [checkingBalance, savingsBalance, budgetIncome, budgetExpenses],
-            backgroundColor: ['#3498db', '#2ecc71', '#27ae60', '#e74c3c']
+            data: [checkingBalance + savingsBalance, totalDebt],
+            backgroundColor: ['#27ae60', '#e74c3c']
           }]
         },
         options: {
@@ -225,7 +238,7 @@ function updateDashboard() {
           plugins: {
             title: {
               display: true,
-              text: 'Financial Overview'
+              text: 'Assets vs Debts'
             }
           }
         }
@@ -246,6 +259,78 @@ function renderAccountBalances() {
   
   if (currentCheckingEl) currentCheckingEl.textContent = checkingBalance.toFixed(2);
   if (currentSavingsEl) currentSavingsEl.textContent = savingsBalance.toFixed(2);
+
+  // Render debt accounts
+  renderDebtAccounts();
+}
+
+function renderDebtAccounts() {
+  const debtAccounts = accountBalances.filter(acc => 
+    acc.account_type === 'credit_card' || acc.account_type === 'student_loan'
+  );
+  
+  const debtGrid = document.getElementById('debt-accounts-grid');
+  const noDebtsMessage = document.getElementById('no-debts-message');
+  
+  if (!debtGrid) return;
+  
+  debtGrid.innerHTML = '';
+  
+  if (debtAccounts.length === 0) {
+    if (noDebtsMessage) noDebtsMessage.style.display = 'block';
+    return;
+  }
+  
+  if (noDebtsMessage) noDebtsMessage.style.display = 'none';
+  
+  debtAccounts.forEach(account => {
+    const div = document.createElement('div');
+    div.className = 'debt-card';
+    
+    const typeLabel = account.account_type === 'credit_card' ? 'Credit Card' : 'Student Loan';
+    
+    div.innerHTML = `
+      <div class="debt-header">
+        <div>
+          <div class="debt-title">${account.account_name || 'Unnamed Account'}</div>
+          <div class="debt-type">${typeLabel}</div>
+        </div>
+        <div class="debt-actions">
+          <button onclick="editDebtAccount(${account.id})" class="edit-btn">Edit</button>
+          <button onclick="deleteDebtAccount(${account.id})" class="delete-btn">Delete</button>
+        </div>
+      </div>
+      
+      <div class="debt-balance">${account.balance.toFixed(2)}</div>
+      
+      <div class="debt-details">
+        <div class="debt-detail">
+          <div class="debt-detail-label">Interest Rate</div>
+          <div class="debt-detail-value">${account.interest_rate || 0}%</div>
+        </div>
+        <div class="debt-detail">
+          <div class="debt-detail-label">Min Payment</div>
+          <div class="debt-detail-value">${(account.minimum_payment || 0).toFixed(2)}</div>
+        </div>
+        <div class="debt-detail">
+          <div class="debt-detail-label">Due Date</div>
+          <div class="debt-detail-value">${account.due_date || 1}${getOrdinalSuffix(account.due_date || 1)}</div>
+        </div>
+      </div>
+    `;
+    
+    debtGrid.appendChild(div);
+  });
+}
+
+function getOrdinalSuffix(day) {
+  if (day >= 11 && day <= 13) return 'th';
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
 }
 
 async function updateBalance(accountType) {
@@ -268,6 +353,68 @@ async function updateBalance(accountType) {
   } catch (error) {
     console.error('Failed to update balance:', error);
     alert('Failed to update balance: ' + error.message);
+  }
+}
+
+// Debt Account Management
+async function saveDebtAccount() {
+  console.log('Saving debt account...');
+  
+  const id = document.getElementById('debt-id').value;
+  const accountData = {
+    account_type: document.getElementById('debt-account-type').value,
+    account_name: document.getElementById('debt-name').value,
+    balance: parseFloat(document.getElementById('debt-balance').value),
+    interest_rate: parseFloat(document.getElementById('debt-interest-rate').value) || 0,
+    minimum_payment: parseFloat(document.getElementById('debt-minimum-payment').value) || 0,
+    due_date: parseInt(document.getElementById('debt-due-date').value) || 1
+  };
+
+  try {
+    if (id) {
+      await window.electronAPI.updateDebtAccount(parseInt(id), accountData);
+    } else {
+      await window.electronAPI.addDebtAccount(accountData);
+    }
+    await loadData();
+    closeModal('debt-modal');
+    renderAccountBalances();
+    updateDashboard();
+  } catch (error) {
+    console.error('Failed to save debt account:', error);
+    alert('Failed to save debt account: ' + error.message);
+  }
+}
+
+async function deleteDebtAccount(id) {
+  if (confirm('Are you sure you want to delete this debt account?')) {
+    try {
+      await window.electronAPI.deleteDebtAccount(id);
+      await loadData();
+      renderAccountBalances();
+      updateDashboard();
+    } catch (error) {
+      console.error('Failed to delete debt account:', error);
+      alert('Failed to delete debt account: ' + error.message);
+    }
+  }
+}
+
+function editDebtAccount(id) {
+  const account = accountBalances.find(acc => acc.id === id);
+  if (account) {
+    document.getElementById('debt-id').value = account.id;
+    document.getElementById('debt-account-type').value = account.account_type;
+    document.getElementById('debt-name').value = account.account_name || '';
+    document.getElementById('debt-balance').value = account.balance;
+    document.getElementById('debt-interest-rate').value = account.interest_rate || '';
+    document.getElementById('debt-minimum-payment').value = account.minimum_payment || '';
+    document.getElementById('debt-due-date').value = account.due_date || 1;
+    
+    const typeLabel = account.account_type === 'credit_card' ? 'Credit Card' : 'Student Loan';
+    document.getElementById('debt-modal-title').textContent = `Edit ${typeLabel}`;
+    
+    openDebtModal(account.account_type);
   }
 }
 
@@ -877,6 +1024,19 @@ function openGoalModal() {
   }
 }
 
+function openDebtModal(accountType) {
+  const modal = document.getElementById('debt-modal');
+  if (modal) {
+    modal.style.display = 'block';
+    document.getElementById('debt-form').reset();
+    document.getElementById('debt-id').value = '';
+    document.getElementById('debt-account-type').value = accountType;
+    
+    const typeLabel = accountType === 'credit_card' ? 'Credit Card' : 'Student Loan';
+    document.getElementById('debt-modal-title').textContent = `Add ${typeLabel}`;
+  }
+}
+
 function closeModal(modalId) {
   const modal = document.getElementById(modalId);
   if (modal) {
@@ -919,5 +1079,8 @@ window.editBudgetItem = editBudgetItem;
 window.deleteBudgetItem = deleteBudgetItem;
 window.editSavingsGoal = editSavingsGoal;
 window.deleteSavingsGoal = deleteSavingsGoal;
+window.editDebtAccount = editDebtAccount;
+window.deleteDebtAccount = deleteDebtAccount;
 window.updateBalance = updateBalance;
+window.openDebtModal = openDebtModal;
 window.closeModal = closeModal;

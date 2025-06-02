@@ -33,12 +33,12 @@
             <p class="amount" id="savings-balance">$0.00</p>
           </div>
           <div class="card">
-            <h3>Monthly Budget</h3>
-            <p class="amount" id="monthly-budget-total">$0.00</p>
+            <h3>Total Debt</h3>
+            <p class="amount expense" id="total-debt">$0.00</p>
           </div>
           <div class="card">
-            <h3>Budget Remaining</h3>
-            <p class="amount" id="budget-remaining">$0.00</p>
+            <h3>Net Worth</h3>
+            <p class="amount" id="net-worth">$0.00</p>
           </div>
         </div>
         <div class="chart-container">
@@ -50,23 +50,43 @@
       <div id="accounts-view" class="view">
         <div class="actions-bar">
           <h2>Account Balances</h2>
-        </div>
-        <div class="accounts-grid">
-          <div class="card">
-            <h3>Checking Account</h3>
-            <div class="balance-input-group">
-              <input type="number" id="checking-input" step="0.01" placeholder="Enter balance">
-              <button onclick="updateBalance('checking')" class="primary-btn">Update</button>
-            </div>
-            <p class="current-balance">Current: $<span id="current-checking">0.00</span></p>
+          <div style="display: flex; gap: 1rem;">
+            <button onclick="openDebtModal('credit_card')" class="primary-btn">Add Credit Card</button>
+            <button onclick="openDebtModal('student_loan')" class="primary-btn">Add Student Loan</button>
           </div>
-          <div class="card">
-            <h3>Savings Account</h3>
-            <div class="balance-input-group">
-              <input type="number" id="savings-input" step="0.01" placeholder="Enter balance">
-              <button onclick="updateBalance('savings')" class="primary-btn">Update</button>
+        </div>
+
+        <!-- Assets Section -->
+        <div class="accounts-section">
+          <h3>Assets</h3>
+          <div class="accounts-grid">
+            <div class="card">
+              <h3>Checking Account</h3>
+              <div class="balance-input-group">
+                <input type="number" id="checking-input" step="0.01" placeholder="Enter balance">
+                <button onclick="updateBalance('checking')" class="primary-btn">Update</button>
+              </div>
+              <p class="current-balance">Current: $<span id="current-checking">0.00</span></p>
             </div>
-            <p class="current-balance">Current: $<span id="current-savings">0.00</span></p>
+            <div class="card">
+              <h3>Savings Account</h3>
+              <div class="balance-input-group">
+                <input type="number" id="savings-input" step="0.01" placeholder="Enter balance">
+                <button onclick="updateBalance('savings')" class="primary-btn">Update</button>
+              </div>
+              <p class="current-balance">Current: $<span id="current-savings">0.00</span></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Debts Section -->
+        <div class="accounts-section">
+          <h3>Debts</h3>
+          <div id="debt-accounts-grid" class="accounts-grid">
+            <!-- Debt accounts will be rendered here -->
+          </div>
+          <div id="no-debts-message" class="info-message" style="display: none;">
+            <p>No debt accounts added yet. Use the buttons above to add credit cards or student loans.</p>
           </div>
         </div>
       </div>
@@ -293,6 +313,43 @@
           <div class="modal-actions">
             <button type="submit" class="primary-btn">Save</button>
             <button type="button" class="secondary-btn" onclick="closeModal('goal-modal')">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Debt Account Modal -->
+    <div id="debt-modal" class="modal">
+      <div class="modal-content">
+        <h2 id="debt-modal-title">Add Debt Account</h2>
+        <form id="debt-form">
+          <input type="hidden" id="debt-id">
+          <input type="hidden" id="debt-account-type">
+          <div class="form-group">
+            <label for="debt-name">Account Name</label>
+            <input type="text" id="debt-name" required placeholder="e.g., Chase Freedom, Federal Student Loan">
+          </div>
+          <div class="form-group">
+            <label for="debt-balance">Current Balance</label>
+            <input type="number" id="debt-balance" step="0.01" required>
+            <small>Enter the amount you owe (positive number)</small>
+          </div>
+          <div class="form-group">
+            <label for="debt-interest-rate">Interest Rate (%)</label>
+            <input type="number" id="debt-interest-rate" step="0.01" placeholder="e.g., 18.99">
+          </div>
+          <div class="form-group">
+            <label for="debt-minimum-payment">Minimum Payment</label>
+            <input type="number" id="debt-minimum-payment" step="0.01" placeholder="Monthly minimum payment">
+          </div>
+          <div class="form-group">
+            <label for="debt-due-date">Due Date (Day of Month)</label>
+            <input type="number" id="debt-due-date" min="1" max="31" value="1">
+            <small>What day of the month is payment due?</small>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="primary-btn">Save</button>
+            <button type="button" class="secondary-btn" onclick="closeModal('debt-modal')">Cancel</button>
           </div>
         </form>
       </div>

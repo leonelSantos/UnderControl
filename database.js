@@ -31,7 +31,7 @@ const initDatabase = () => {
         )
       `);
 
-      // Account balances table - manual input for checking and savings
+      // Account balances table - check if it exists and migrate if needed
       db.run(`
         CREATE TABLE IF NOT EXISTS account_balances (
           id INTEGER PRIMARY KEY,
@@ -40,6 +40,130 @@ const initDatabase = () => {
           last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      // Check if we need to migrate the account_balances table
+      db.all("PRAGMA table_info(account_balances)", (err, columns) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        const columnNames = columns.map(col => col.name);
+        const needsMigration = !columnNames.includes('account_name');
+
+        if (needsMigration) {
+          console.log('Migrating account_balances table...');
+          
+          // SQLite doesn't support modifying CHECK constraints directly
+          // We need to recreate the table with the new constraint
+          db.run(`
+            CREATE TABLE IF NOT EXISTS account_balances_new (
+              id INTEGER PRIMARY KEY,
+              account_type TEXT NOT NULL CHECK(account_type IN ('checking', 'savings', 'credit_card', 'student_loan')),
+              balance REAL NOT NULL DEFAULT 0,
+              account_name TEXT,
+              interest_rate REAL DEFAULT 0,
+              minimum_payment REAL DEFAULT 0,
+              due_date INTEGER DEFAULT 1,
+              last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+          `, (err) => {
+            if (err) {
+              console.error('Error creating new table:', err);
+              // Continue with ALTER approach if table creation fails
+              addColumnsToExistingTable();
+              return;
+            }
+            
+            // Copy existing data to new table
+            db.run(`
+              INSERT INTO account_balances_new (id, account_type, balance, account_name, last_updated)
+              SELECT 
+                id, 
+                account_type, 
+                balance, 
+                CASE 
+                  WHEN account_type = 'checking' THEN 'Checking Account'
+                  WHEN account_type = 'savings' THEN 'Savings Account'
+                  ELSE account_type
+                END as account_name,
+                last_updated
+              FROM account_balances
+            `, (err) => {
+              if (err) {
+                console.error('Error copying data:', err);
+                addColumnsToExistingTable();
+                return;
+              }
+              
+              // Drop old table and rename new one
+              db.run('DROP TABLE account_balances', (err) => {
+                if (err) {
+                  console.error('Error dropping old table:', err);
+                  addColumnsToExistingTable();
+                  return;
+                }
+                
+                db.run('ALTER TABLE account_balances_new RENAME TO account_balances', (err) => {
+                  if (err) {
+                    console.error('Error renaming table:', err);
+                    // Try to recreate the original table structure
+                    addColumnsToExistingTable();
+                    return;
+                  }
+                  
+                  console.log('Migration completed successfully');
+                  continueInitialization(resolve, reject);
+                });
+              });
+            });
+          });
+        } else {
+          // No migration needed, continue with initialization
+          continueInitialization(resolve, reject);
+        }
+        
+        function addColumnsToExistingTable() {
+          console.log('Falling back to ALTER TABLE approach...');
+          
+          // Add new columns to existing table (this won't fix the CHECK constraint but allows the app to work)
+          db.run('ALTER TABLE account_balances ADD COLUMN account_name TEXT', (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding account_name column:', err);
+            }
+          });
+          
+          db.run('ALTER TABLE account_balances ADD COLUMN interest_rate REAL DEFAULT 0', (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding interest_rate column:', err);
+            }
+          });
+          
+          db.run('ALTER TABLE account_balances ADD COLUMN minimum_payment REAL DEFAULT 0', (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding minimum_payment column:', err);
+            }
+          });
+          
+          db.run('ALTER TABLE account_balances ADD COLUMN due_date INTEGER DEFAULT 1', (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding due_date column:', err);
+            }
+          });
+
+          // Update existing checking and savings accounts with names
+          db.run(`UPDATE account_balances SET account_name = 'Checking Account' WHERE account_type = 'checking' AND account_name IS NULL`);
+          db.run(`UPDATE account_balances SET account_name = 'Savings Account' WHERE account_type = 'savings' AND account_name IS NULL`);
+          
+          continueInitialization(resolve, reject);
+        }
+      });
+    });
+  });
+};
+
+const continueInitialization = (resolve, reject) => {
+  db.serialize(() => {
 
       // Monthly budget table - for salary and recurring expenses
       db.run(`
@@ -100,10 +224,12 @@ const initDatabase = () => {
       db.run('CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category)');
       db.run('CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)');
 
-      // Initialize default account balances
+      // Initialize default account balances - now includes debt accounts
       db.run(`
-        INSERT OR IGNORE INTO account_balances (account_type, balance) 
-        VALUES ('checking', 0), ('savings', 0)
+        INSERT OR IGNORE INTO account_balances (account_type, balance, account_name) 
+        VALUES 
+          ('checking', 0, 'Checking Account'),
+          ('savings', 0, 'Savings Account')
       `);
 
       // Insert default categories
@@ -185,15 +311,14 @@ const initDatabase = () => {
         else resolve();
       });
     });
-  });
-};
+  }
 
 // Helper functions for database operations
 
-// Account balance functions
+// Account balance functions - updated for all account types
 const getAccountBalances = () => {
   return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM account_balances', (err, rows) => {
+    db.all('SELECT * FROM account_balances ORDER BY account_type', (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
@@ -210,6 +335,49 @@ const updateAccountBalance = (accountType, balance) => {
         else resolve();
       }
     );
+  });
+};
+
+const addDebtAccount = (accountData) => {
+  return new Promise((resolve, reject) => {
+    const { account_type, balance, account_name, interest_rate, minimum_payment, due_date } = accountData;
+    
+    // Since we can't use UNIQUE constraint on account_type anymore for debt accounts,
+    // we'll insert without the UNIQUE constraint
+    db.run(
+      `INSERT INTO account_balances (account_type, balance, account_name, interest_rate, minimum_payment, due_date) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [account_type, balance, account_name, interest_rate || 0, minimum_payment || 0, due_date || 1],
+      function(err) {
+        if (err) reject(err);
+        else resolve({ id: this.lastID, ...accountData });
+      }
+    );
+  });
+};
+
+const updateDebtAccount = (id, accountData) => {
+  return new Promise((resolve, reject) => {
+    const { balance, account_name, interest_rate, minimum_payment, due_date } = accountData;
+    db.run(
+      `UPDATE account_balances 
+       SET balance = ?, account_name = ?, interest_rate = ?, minimum_payment = ?, due_date = ?
+       WHERE id = ?`,
+      [balance, account_name, interest_rate || 0, minimum_payment || 0, due_date || 1, id],
+      function(err) {
+        if (err) reject(err);
+        else resolve(accountData);
+      }
+    );
+  });
+};
+
+const deleteDebtAccount = (id) => {
+  return new Promise((resolve, reject) => {
+    db.run('DELETE FROM account_balances WHERE id = ?', [id], (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
   });
 };
 
@@ -402,6 +570,9 @@ module.exports = {
   initDatabase,
   getAccountBalances,
   updateAccountBalance,
+  addDebtAccount,
+  updateDebtAccount,
+  deleteDebtAccount,
   getMonthlyBudget,
   addBudgetItem,
   updateBudgetItem,

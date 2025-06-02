@@ -102,6 +102,18 @@ main {
 }
 
 /* Account Balances Styles */
+.accounts-section {
+  margin-bottom: 3rem;
+}
+
+.accounts-section h3 {
+  color: #2c3e50;
+  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 0.5rem;
+}
+
 .accounts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -124,6 +136,72 @@ main {
   font-weight: bold;
   color: #2c3e50;
   margin-top: 1rem;
+}
+
+/* Debt Account Styles */
+.debt-card {
+  background: #fff;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border-left: 4px solid #e74c3c;
+}
+
+.debt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.debt-title {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.debt-type {
+  font-size: 0.8rem;
+  color: #666;
+  text-transform: uppercase;
+  background: #f8f9fa;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.debt-balance {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #e74c3c;
+  margin-bottom: 1rem;
+}
+
+.debt-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.debt-detail {
+  text-align: center;
+}
+
+.debt-detail-label {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.debt-detail-value {
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.debt-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 /* Budget Styles */
@@ -496,6 +574,10 @@ th {
   }
   
   .goals-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .debt-details {
     grid-template-columns: 1fr;
   }
   
