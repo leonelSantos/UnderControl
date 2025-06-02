@@ -23,12 +23,37 @@ const initDatabase = () => {
           amount REAL NOT NULL,
           category TEXT NOT NULL,
           type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-          account_id TEXT,
+          account_type TEXT CHECK(account_type IN ('checking', 'savings')),
           tags TEXT,
           notes TEXT,
           created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (account_id) REFERENCES bank_accounts(id)
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Account balances table - manual input for checking and savings
+      db.run(`
+        CREATE TABLE IF NOT EXISTS account_balances (
+          id INTEGER PRIMARY KEY,
+          account_type TEXT UNIQUE NOT NULL CHECK(account_type IN ('checking', 'savings')),
+          balance REAL NOT NULL DEFAULT 0,
+          last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Monthly budget table - for salary and recurring expenses
+      db.run(`
+        CREATE TABLE IF NOT EXISTS monthly_budget (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+          category TEXT NOT NULL,
+          is_recurring BOOLEAN DEFAULT 1,
+          day_of_month INTEGER DEFAULT 1,
+          is_active BOOLEAN DEFAULT 1,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
       `);
 
@@ -42,40 +67,6 @@ const initDatabase = () => {
           deadline TEXT,
           description TEXT,
           color TEXT DEFAULT '#3498db',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      // Bank accounts table - for Plaid integration
-      db.run(`
-        CREATE TABLE IF NOT EXISTS bank_accounts (
-          id TEXT PRIMARY KEY,
-          plaid_account_id TEXT UNIQUE,
-          plaid_item_id TEXT,
-          institution TEXT NOT NULL,
-          name TEXT NOT NULL,
-          type TEXT NOT NULL,
-          subtype TEXT,
-          balance REAL,
-          currency TEXT DEFAULT 'USD',
-          last_updated TEXT,
-          is_active BOOLEAN DEFAULT 1,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      // Budgets table - for budget tracking
-      db.run(`
-        CREATE TABLE IF NOT EXISTS budgets (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          category TEXT NOT NULL,
-          amount REAL NOT NULL,
-          period TEXT NOT NULL CHECK(period IN ('weekly', 'monthly', 'yearly')),
-          start_date TEXT NOT NULL,
-          end_date TEXT,
-          is_active BOOLEAN DEFAULT 1,
           created_at TEXT DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -95,24 +86,6 @@ const initDatabase = () => {
         )
       `);
 
-      // Recurring transactions table
-      db.run(`
-        CREATE TABLE IF NOT EXISTS recurring_transactions (
-          id TEXT PRIMARY KEY,
-          description TEXT NOT NULL,
-          amount REAL NOT NULL,
-          category TEXT NOT NULL,
-          type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-          frequency TEXT NOT NULL CHECK(frequency IN ('daily', 'weekly', 'monthly', 'yearly')),
-          start_date TEXT NOT NULL,
-          end_date TEXT,
-          last_processed TEXT,
-          next_date TEXT,
-          is_active BOOLEAN DEFAULT 1,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
       // Settings table - app configuration
       db.run(`
         CREATE TABLE IF NOT EXISTS settings (
@@ -126,7 +99,12 @@ const initDatabase = () => {
       db.run('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)');
       db.run('CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category)');
       db.run('CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)');
-      db.run('CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)');
+
+      // Initialize default account balances
+      db.run(`
+        INSERT OR IGNORE INTO account_balances (account_type, balance) 
+        VALUES ('checking', 0), ('savings', 0)
+      `);
 
       // Insert default categories
       const defaultCategories = [
@@ -137,7 +115,7 @@ const initDatabase = () => {
         { id: 'shopping', name: 'Shopping', type: 'expense', icon: '🛍️', color: '#e91e63' },
         { id: 'healthcare', name: 'Healthcare', type: 'expense', icon: '🏥', color: '#2ecc71' },
         { id: 'education', name: 'Education', type: 'expense', icon: '📚', color: '#1abc9c' },
-        { id: 'housing', name: 'Housing', type: 'expense', icon: '🏠', color: '#34495e' },
+        { id: 'housing', name: 'Housing/Rent', type: 'expense', icon: '🏠', color: '#34495e' },
         { id: 'insurance', name: 'Insurance', type: 'expense', icon: '🛡️', color: '#16a085' },
         { id: 'savings', name: 'Savings', type: 'expense', icon: '💰', color: '#27ae60' },
         { id: 'salary', name: 'Salary', type: 'income', icon: '💵', color: '#2ecc71' },
@@ -190,9 +168,17 @@ const initDatabase = () => {
 
       db.run(`
         CREATE TRIGGER IF NOT EXISTS update_budget_timestamp 
-        AFTER UPDATE ON budgets
+        AFTER UPDATE ON monthly_budget
         BEGIN
-          UPDATE budgets SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+          UPDATE monthly_budget SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+        END
+      `);
+
+      db.run(`
+        CREATE TRIGGER IF NOT EXISTS update_account_balance_timestamp 
+        AFTER UPDATE ON account_balances
+        BEGIN
+          UPDATE account_balances SET last_updated = CURRENT_TIMESTAMP WHERE id = NEW.id;
         END
       `, (err) => {
         if (err) reject(err);
@@ -203,6 +189,79 @@ const initDatabase = () => {
 };
 
 // Helper functions for database operations
+
+// Account balance functions
+const getAccountBalances = () => {
+  return new Promise((resolve, reject) => {
+    db.all('SELECT * FROM account_balances', (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+};
+
+const updateAccountBalance = (accountType, balance) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      'UPDATE account_balances SET balance = ? WHERE account_type = ?',
+      [balance, accountType],
+      function(err) {
+        if (err) reject(err);
+        else resolve();
+      }
+    );
+  });
+};
+
+// Monthly budget functions
+const getMonthlyBudget = () => {
+  return new Promise((resolve, reject) => {
+    db.all('SELECT * FROM monthly_budget WHERE is_active = 1 ORDER BY type, name', (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+};
+
+const addBudgetItem = (budgetItem) => {
+  return new Promise((resolve, reject) => {
+    const { id, name, amount, type, category, day_of_month } = budgetItem;
+    db.run(
+      `INSERT INTO monthly_budget (id, name, amount, type, category, day_of_month) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, name, amount, type, category, day_of_month || 1],
+      function(err) {
+        if (err) reject(err);
+        else resolve({ id, ...budgetItem });
+      }
+    );
+  });
+};
+
+const updateBudgetItem = (budgetItem) => {
+  return new Promise((resolve, reject) => {
+    const { id, name, amount, type, category, day_of_month } = budgetItem;
+    db.run(
+      `UPDATE monthly_budget 
+       SET name = ?, amount = ?, type = ?, category = ?, day_of_month = ?
+       WHERE id = ?`,
+      [name, amount, type, category, day_of_month, id],
+      function(err) {
+        if (err) reject(err);
+        else resolve(budgetItem);
+      }
+    );
+  });
+};
+
+const deleteBudgetItem = (id) => {
+  return new Promise((resolve, reject) => {
+    db.run('DELETE FROM monthly_budget WHERE id = ?', [id], (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+};
 
 // Get summary statistics
 const getFinancialSummary = (startDate, endDate) => {
@@ -299,122 +358,56 @@ const getMonthlyTrends = (months = 12) => {
   });
 };
 
-// Budget tracking
-const getBudgetStatus = (budgetId) => {
+// Budget vs actual spending comparison
+const getBudgetComparison = () => {
   return new Promise((resolve, reject) => {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    
     const query = `
       SELECT 
-        b.*,
-        COALESCE(SUM(t.amount), 0) as spent
-      FROM budgets b
+        b.id,
+        b.name,
+        b.amount as budgeted,
+        b.type,
+        b.category,
+        COALESCE(SUM(t.amount), 0) as actual
+      FROM monthly_budget b
       LEFT JOIN transactions t ON t.category = b.category 
-        AND t.type = 'expense'
-        AND t.date >= b.start_date
-        AND (b.end_date IS NULL OR t.date <= b.end_date)
-      WHERE b.id = ?
-      GROUP BY b.id
+        AND t.type = b.type
+        AND strftime('%m', t.date) = ?
+        AND strftime('%Y', t.date) = ?
+      WHERE b.is_active = 1
+      GROUP BY b.id, b.name, b.amount, b.type, b.category
     `;
     
-    db.get(query, [budgetId], (err, row) => {
+    db.all(query, [currentMonth.toString().padStart(2, '0'), currentYear.toString()], (err, rows) => {
       if (err) reject(err);
       else {
-        if (row) {
-          row.remaining = row.amount - row.spent;
-          row.percentage = (row.spent / row.amount * 100).toFixed(2);
-        }
-        resolve(row);
+        const comparison = rows.map(row => ({
+          ...row,
+          difference: row.budgeted - row.actual,
+          percentage: row.budgeted > 0 ? (row.actual / row.budgeted * 100).toFixed(2) : 0
+        }));
+        resolve(comparison);
       }
     });
   });
-};
-
-// Process recurring transactions
-const processRecurringTransactions = () => {
-  return new Promise((resolve, reject) => {
-    const today = new Date().toISOString().split('T')[0];
-    
-    db.all(
-      `SELECT * FROM recurring_transactions 
-       WHERE is_active = 1 AND next_date <= ?`,
-      [today],
-      async (err, recurringTxns) => {
-        if (err) return reject(err);
-        
-        const processed = [];
-        for (const recurring of recurringTxns) {
-          // Create transaction
-          const txn = {
-            id: require('uuid').v4(),
-            date: recurring.next_date,
-            description: recurring.description,
-            amount: recurring.amount,
-            category: recurring.category,
-            type: recurring.type,
-            notes: 'Recurring transaction'
-          };
-          
-          // Insert transaction
-          await new Promise((res, rej) => {
-            db.run(
-              `INSERT INTO transactions (id, date, description, amount, category, type, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [txn.id, txn.date, txn.description, txn.amount, txn.category, txn.type, txn.notes],
-              (err) => err ? rej(err) : res()
-            );
-          });
-          
-          // Calculate next date
-          const nextDate = calculateNextDate(recurring.next_date, recurring.frequency);
-          
-          // Update recurring transaction
-          await new Promise((res, rej) => {
-            db.run(
-              `UPDATE recurring_transactions 
-               SET last_processed = ?, next_date = ?
-               WHERE id = ?`,
-              [today, nextDate, recurring.id],
-              (err) => err ? rej(err) : res()
-            );
-          });
-          
-          processed.push(txn);
-        }
-        
-        resolve(processed);
-      }
-    );
-  });
-};
-
-// Helper function to calculate next date for recurring transactions
-const calculateNextDate = (currentDate, frequency) => {
-  const date = new Date(currentDate);
-  
-  switch (frequency) {
-    case 'daily':
-      date.setDate(date.getDate() + 1);
-      break;
-    case 'weekly':
-      date.setDate(date.getDate() + 7);
-      break;
-    case 'monthly':
-      date.setMonth(date.getMonth() + 1);
-      break;
-    case 'yearly':
-      date.setFullYear(date.getFullYear() + 1);
-      break;
-  }
-  
-  return date.toISOString().split('T')[0];
 };
 
 // Export database instance and helper functions
 module.exports = {
   db,
   initDatabase,
+  getAccountBalances,
+  updateAccountBalance,
+  getMonthlyBudget,
+  addBudgetItem,
+  updateBudgetItem,
+  deleteBudgetItem,
   getFinancialSummary,
   getSpendingByCategory,
   getMonthlyTrends,
-  getBudgetStatus,
-  processRecurringTransactions
+  getBudgetComparison
 };

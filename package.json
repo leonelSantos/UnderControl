@@ -9,7 +9,7 @@
     "build": "electron-builder",
     "dist": "electron-builder --publish=never"
   },
-  "keywords": ["electron", "finance", "tracker"],
+  "keywords": ["electron", "finance", "tracker", "budget", "savings"],
   "author": "Leo Santos",
   "license": "MIT",
   "devDependencies": {
@@ -19,7 +19,6 @@
   "dependencies": {
     "chart.js": "^4.4.0",
     "electron-store": "^8.1.0",
-    "plaid": "^23.0.0",
     "sqlite3": "^5.1.6",
     "uuid": "^9.0.1"
   },

@@ -12,10 +12,11 @@
       <h1>Personal Finance Tracker</h1>
       <nav>
         <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+        <button class="nav-btn" data-view="accounts">Accounts</button>
+        <button class="nav-btn" data-view="budget">Budget</button>
         <button class="nav-btn" data-view="transactions">Transactions</button>
         <button class="nav-btn" data-view="savings">Savings Goals</button>
         <button class="nav-btn" data-view="analytics">Analytics</button>
-        <button class="nav-btn" data-view="banks">Bank Accounts</button>
       </nav>
     </header>
 
@@ -24,24 +25,80 @@
       <div id="dashboard-view" class="view active">
         <div class="dashboard-grid">
           <div class="card">
-            <h3>Total Balance</h3>
-            <p class="amount" id="total-balance">$0.00</p>
+            <h3>Checking Account</h3>
+            <p class="amount" id="checking-balance">$0.00</p>
           </div>
           <div class="card">
-            <h3>Monthly Income</h3>
-            <p class="amount income" id="monthly-income">$0.00</p>
+            <h3>Savings Account</h3>
+            <p class="amount" id="savings-balance">$0.00</p>
           </div>
           <div class="card">
-            <h3>Monthly Expenses</h3>
-            <p class="amount expense" id="monthly-expenses">$0.00</p>
+            <h3>Monthly Budget</h3>
+            <p class="amount" id="monthly-budget-total">$0.00</p>
           </div>
           <div class="card">
-            <h3>Savings Rate</h3>
-            <p class="amount" id="savings-rate">0%</p>
+            <h3>Budget Remaining</h3>
+            <p class="amount" id="budget-remaining">$0.00</p>
           </div>
         </div>
         <div class="chart-container">
           <canvas id="overview-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Account Balances View -->
+      <div id="accounts-view" class="view">
+        <div class="actions-bar">
+          <h2>Account Balances</h2>
+        </div>
+        <div class="accounts-grid">
+          <div class="card">
+            <h3>Checking Account</h3>
+            <div class="balance-input-group">
+              <input type="number" id="checking-input" step="0.01" placeholder="Enter balance">
+              <button onclick="updateBalance('checking')" class="primary-btn">Update</button>
+            </div>
+            <p class="current-balance">Current: $<span id="current-checking">0.00</span></p>
+          </div>
+          <div class="card">
+            <h3>Savings Account</h3>
+            <div class="balance-input-group">
+              <input type="number" id="savings-input" step="0.01" placeholder="Enter balance">
+              <button onclick="updateBalance('savings')" class="primary-btn">Update</button>
+            </div>
+            <p class="current-balance">Current: $<span id="current-savings">0.00</span></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monthly Budget View -->
+      <div id="budget-view" class="view">
+        <div class="actions-bar">
+          <button id="add-budget-btn" class="primary-btn">Add Budget Item</button>
+          <div class="budget-summary">
+            <span>Income: $<span id="budget-income-total">0.00</span></span>
+            <span>Expenses: $<span id="budget-expense-total">0.00</span></span>
+            <span>Net: $<span id="budget-net">0.00</span></span>
+          </div>
+        </div>
+        
+        <div class="budget-sections">
+          <div class="budget-section">
+            <h3>Monthly Income</h3>
+            <div id="budget-income-list" class="budget-list"></div>
+          </div>
+          
+          <div class="budget-section">
+            <h3>Monthly Expenses</h3>
+            <div id="budget-expense-list" class="budget-list"></div>
+          </div>
+        </div>
+
+        <div class="budget-comparison">
+          <h3>Budget vs Actual (This Month)</h3>
+          <div id="budget-comparison-chart" class="chart-container">
+            <canvas id="budget-chart"></canvas>
+          </div>
         </div>
       </div>
 
@@ -59,6 +116,7 @@
               <th>Category</th>
               <th>Amount</th>
               <th>Type</th>
+              <th>Account</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -81,6 +139,7 @@
             <option value="spending-category">Spending by Category</option>
             <option value="income-expense">Income vs Expenses</option>
             <option value="monthly-trend">Monthly Trend</option>
+            <option value="budget-analysis">Budget Analysis</option>
           </select>
           <select id="time-period">
             <option value="month">This Month</option>
@@ -91,19 +150,6 @@
         </div>
         <div class="chart-container">
           <canvas id="analytics-chart"></canvas>
-        </div>
-      </div>
-
-      <!-- Bank Accounts View -->
-      <div id="banks-view" class="view">
-        <div class="actions-bar">
-          <button id="connect-bank-btn" class="primary-btn">Connect Bank Account</button>
-        </div>
-        <div id="banks-list" class="banks-grid">
-          <div class="info-message">
-            <p>Connect your bank accounts to automatically import transactions and track balances.</p>
-            <p>This feature requires Plaid integration. Click "Connect Bank Account" to learn more.</p>
-          </div>
         </div>
       </div>
     </main>
@@ -137,6 +183,9 @@
               <option value="shopping">Shopping</option>
               <option value="healthcare">Healthcare</option>
               <option value="education">Education</option>
+              <option value="housing">Housing/Rent</option>
+              <option value="salary">Salary</option>
+              <option value="freelance">Freelance</option>
               <option value="other">Other</option>
             </select>
           </div>
@@ -147,9 +196,103 @@
               <label><input type="radio" name="type" value="income"> Income</label>
             </div>
           </div>
+          <div class="form-group">
+            <label for="transaction-account">Account</label>
+            <select id="transaction-account">
+              <option value="checking">Checking</option>
+              <option value="savings">Savings</option>
+            </select>
+          </div>
           <div class="modal-actions">
             <button type="submit" class="primary-btn">Save</button>
-            <button type="button" class="secondary-btn" onclick="closeModal()">Cancel</button>
+            <button type="button" class="secondary-btn" onclick="closeModal('transaction-modal')">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Budget Item Modal -->
+    <div id="budget-modal" class="modal">
+      <div class="modal-content">
+        <h2>Add Budget Item</h2>
+        <form id="budget-form">
+          <input type="hidden" id="budget-id">
+          <div class="form-group">
+            <label for="budget-name">Name</label>
+            <input type="text" id="budget-name" required placeholder="e.g., Monthly Salary, Rent, Groceries">
+          </div>
+          <div class="form-group">
+            <label for="budget-amount">Monthly Amount</label>
+            <input type="number" id="budget-amount" step="0.01" required>
+          </div>
+          <div class="form-group">
+            <label>Type</label>
+            <div class="radio-group">
+              <label><input type="radio" name="budget-type" value="income"> Income</label>
+              <label><input type="radio" name="budget-type" value="expense" checked> Expense</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="budget-category">Category</label>
+            <select id="budget-category" required>
+              <option value="">Select category</option>
+              <option value="salary">Salary</option>
+              <option value="freelance">Freelance</option>
+              <option value="food">Food & Dining</option>
+              <option value="transport">Transportation</option>
+              <option value="utilities">Utilities</option>
+              <option value="entertainment">Entertainment</option>
+              <option value="shopping">Shopping</option>
+              <option value="healthcare">Healthcare</option>
+              <option value="education">Education</option>
+              <option value="housing">Housing/Rent</option>
+              <option value="insurance">Insurance</option>
+              <option value="savings">Savings</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="budget-day">Day of Month</label>
+            <input type="number" id="budget-day" min="1" max="31" value="1" required>
+            <small>When this income/expense typically occurs</small>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="primary-btn">Save</button>
+            <button type="button" class="secondary-btn" onclick="closeModal('budget-modal')">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Savings Goal Modal -->
+    <div id="goal-modal" class="modal">
+      <div class="modal-content">
+        <h2>Add Savings Goal</h2>
+        <form id="goal-form">
+          <input type="hidden" id="goal-id">
+          <div class="form-group">
+            <label for="goal-name">Goal Name</label>
+            <input type="text" id="goal-name" required placeholder="e.g., Emergency Fund, Vacation">
+          </div>
+          <div class="form-group">
+            <label for="goal-target">Target Amount</label>
+            <input type="number" id="goal-target" step="0.01" required>
+          </div>
+          <div class="form-group">
+            <label for="goal-current">Current Amount</label>
+            <input type="number" id="goal-current" step="0.01" value="0">
+          </div>
+          <div class="form-group">
+            <label for="goal-deadline">Target Date</label>
+            <input type="date" id="goal-deadline">
+          </div>
+          <div class="form-group">
+            <label for="goal-description">Description</label>
+            <textarea id="goal-description" rows="3" placeholder="Optional description"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="primary-btn">Save</button>
+            <button type="button" class="secondary-btn" onclick="closeModal('goal-modal')">Cancel</button>
           </div>
         </form>
       </div>

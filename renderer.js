@@ -1,8 +1,6 @@
 // renderer.js - Frontend logic
-// Remove the require statement since it's not available in renderer process
-// const { v4: uuidv4 } = require('uuid'); // This line causes the error
 
-// Create a simple UUID generator instead
+// Create a simple UUID generator
 function uuidv4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -13,6 +11,9 @@ function uuidv4() {
 // State management
 let transactions = [];
 let savingsGoals = [];
+let accountBalances = [];
+let monthlyBudget = [];
+let budgetComparison = [];
 let currentView = 'dashboard';
 let charts = {};
 
@@ -37,8 +38,16 @@ async function loadData() {
     if (window.electronAPI) {
       transactions = await window.electronAPI.getTransactions();
       savingsGoals = await window.electronAPI.getSavingsGoals();
-      console.log('Loaded transactions:', transactions.length);
-      console.log('Loaded savings goals:', savingsGoals.length);
+      accountBalances = await window.electronAPI.getAccountBalances();
+      monthlyBudget = await window.electronAPI.getMonthlyBudget();
+      budgetComparison = await window.electronAPI.getBudgetComparison();
+      
+      console.log('Loaded data:', {
+        transactions: transactions.length,
+        savingsGoals: savingsGoals.length,
+        accountBalances: accountBalances.length,
+        monthlyBudget: monthlyBudget.length
+      });
     } else {
       console.error('electronAPI not available');
     }
@@ -53,11 +62,8 @@ function setupEventListeners() {
   
   // Navigation
   const navBtns = document.querySelectorAll('.nav-btn');
-  console.log('Found nav buttons:', navBtns.length);
-  
   navBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
-      console.log('Nav button clicked:', e.target.dataset.view);
       const view = e.target.dataset.view;
       showView(view);
     });
@@ -65,33 +71,43 @@ function setupEventListeners() {
 
   // Transaction form
   const addTransactionBtn = document.getElementById('add-transaction-btn');
-  console.log('Add transaction button found:', !!addTransactionBtn);
-  
   if (addTransactionBtn) {
-    addTransactionBtn.addEventListener('click', () => {
-      console.log('Add transaction button clicked');
-      openTransactionModal();
-    });
+    addTransactionBtn.addEventListener('click', () => openTransactionModal());
   }
 
   const transactionForm = document.getElementById('transaction-form');
   if (transactionForm) {
     transactionForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      console.log('Transaction form submitted');
       await saveTransaction();
     });
   }
 
-  // Bank connection
-  const connectBankBtn = document.getElementById('connect-bank-btn');
-  if (connectBankBtn) {
-    connectBankBtn.addEventListener('click', async () => {
-      console.log('Connect bank button clicked');
-      if (window.electronAPI && window.electronAPI.connectBank) {
-        const result = await window.electronAPI.connectBank();
-        alert(result.message + '\n\n' + result.instructions);
-      }
+  // Budget form
+  const addBudgetBtn = document.getElementById('add-budget-btn');
+  if (addBudgetBtn) {
+    addBudgetBtn.addEventListener('click', () => openBudgetModal());
+  }
+
+  const budgetForm = document.getElementById('budget-form');
+  if (budgetForm) {
+    budgetForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await saveBudgetItem();
+    });
+  }
+
+  // Savings goal form
+  const addGoalBtn = document.getElementById('add-goal-btn');
+  if (addGoalBtn) {
+    addGoalBtn.addEventListener('click', () => openGoalModal());
+  }
+
+  const goalForm = document.getElementById('goal-form');
+  if (goalForm) {
+    goalForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await saveSavingsGoal();
     });
   }
 
@@ -99,12 +115,8 @@ function setupEventListeners() {
   const chartType = document.getElementById('chart-type');
   const timePeriod = document.getElementById('time-period');
   
-  if (chartType) {
-    chartType.addEventListener('change', updateAnalytics);
-  }
-  if (timePeriod) {
-    timePeriod.addEventListener('change', updateAnalytics);
-  }
+  if (chartType) chartType.addEventListener('change', updateAnalytics);
+  if (timePeriod) timePeriod.addEventListener('change', updateAnalytics);
 
   // Search
   const searchInput = document.getElementById('search-transactions');
@@ -129,12 +141,8 @@ function showView(viewName) {
   const targetView = document.getElementById(`${viewName}-view`);
   const targetBtn = document.querySelector(`[data-view="${viewName}"]`);
   
-  if (targetView) {
-    targetView.classList.add('active');
-  }
-  if (targetBtn) {
-    targetBtn.classList.add('active');
-  }
+  if (targetView) targetView.classList.add('active');
+  if (targetBtn) targetBtn.classList.add('active');
   
   currentView = viewName;
 
@@ -142,6 +150,12 @@ function showView(viewName) {
   switch(viewName) {
     case 'dashboard':
       updateDashboard();
+      break;
+    case 'accounts':
+      renderAccountBalances();
+      break;
+    case 'budget':
+      renderBudget();
       break;
     case 'transactions':
       renderTransactions();
@@ -159,38 +173,37 @@ function showView(viewName) {
 function updateDashboard() {
   console.log('Updating dashboard...');
   
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-
-  const monthlyTransactions = transactions.filter(t => {
-    const date = new Date(t.date);
-    return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
-  });
-
-  const income = monthlyTransactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const expenses = monthlyTransactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const balance = income - expenses;
-  const savingsRate = income > 0 ? ((income - expenses) / income * 100).toFixed(1) : 0;
-
-  // Update DOM elements
-  const totalBalanceEl = document.getElementById('total-balance');
-  const monthlyIncomeEl = document.getElementById('monthly-income');
-  const monthlyExpensesEl = document.getElementById('monthly-expenses');
-  const savingsRateEl = document.getElementById('savings-rate');
+  // Update account balances
+  const checkingBalance = accountBalances.find(acc => acc.account_type === 'checking')?.balance || 0;
+  const savingsBalance = accountBalances.find(acc => acc.account_type === 'savings')?.balance || 0;
   
-  if (totalBalanceEl) totalBalanceEl.textContent = `$${balance.toFixed(2)}`;
-  if (monthlyIncomeEl) monthlyIncomeEl.textContent = `$${income.toFixed(2)}`;
-  if (monthlyExpensesEl) monthlyExpensesEl.textContent = `$${expenses.toFixed(2)}`;
-  if (savingsRateEl) savingsRateEl.textContent = `${savingsRate}%`;
+  const checkingEl = document.getElementById('checking-balance');
+  const savingsEl = document.getElementById('savings-balance');
+  
+  if (checkingEl) checkingEl.textContent = `$${checkingBalance.toFixed(2)}`;
+  if (savingsEl) savingsEl.textContent = `$${savingsBalance.toFixed(2)}`;
 
-  // Update overview chart only if Chart.js is available
+  // Calculate budget totals
+  const budgetIncome = monthlyBudget
+    .filter(item => item.type === 'income')
+    .reduce((sum, item) => sum + item.amount, 0);
+  
+  const budgetExpenses = monthlyBudget
+    .filter(item => item.type === 'expense')
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  const budgetNet = budgetIncome - budgetExpenses;
+
+  const budgetTotalEl = document.getElementById('monthly-budget-total');
+  const budgetRemainingEl = document.getElementById('budget-remaining');
+  
+  if (budgetTotalEl) budgetTotalEl.textContent = `$${budgetIncome.toFixed(2)}`;
+  if (budgetRemainingEl) {
+    budgetRemainingEl.textContent = `$${budgetNet.toFixed(2)}`;
+    budgetRemainingEl.className = `amount ${budgetNet >= 0 ? 'income' : 'expense'}`;
+  }
+
+  // Update overview chart
   if (typeof Chart !== 'undefined') {
     const canvas = document.getElementById('overview-chart');
     if (canvas) {
@@ -200,20 +213,232 @@ function updateDashboard() {
       charts.overview = new Chart(ctx, {
         type: 'doughnut',
         data: {
-          labels: ['Income', 'Expenses', 'Savings'],
+          labels: ['Checking', 'Savings', 'Budget Income', 'Budget Expenses'],
           datasets: [{
-            data: [income, expenses, Math.max(0, income - expenses)],
-            backgroundColor: ['#4CAF50', '#f44336', '#2196F3']
+            data: [checkingBalance, savingsBalance, budgetIncome, budgetExpenses],
+            backgroundColor: ['#3498db', '#2ecc71', '#27ae60', '#e74c3c']
           }]
         },
         options: {
           responsive: true,
-          maintainAspectRatio: false
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Financial Overview'
+            }
+          }
         }
       });
     }
-  } else {
-    console.warn('Chart.js not available');
+  }
+}
+
+// Account Balances
+function renderAccountBalances() {
+  console.log('Rendering account balances...');
+  
+  const checkingBalance = accountBalances.find(acc => acc.account_type === 'checking')?.balance || 0;
+  const savingsBalance = accountBalances.find(acc => acc.account_type === 'savings')?.balance || 0;
+  
+  const currentCheckingEl = document.getElementById('current-checking');
+  const currentSavingsEl = document.getElementById('current-savings');
+  
+  if (currentCheckingEl) currentCheckingEl.textContent = checkingBalance.toFixed(2);
+  if (currentSavingsEl) currentSavingsEl.textContent = savingsBalance.toFixed(2);
+}
+
+async function updateBalance(accountType) {
+  const inputId = `${accountType}-input`;
+  const input = document.getElementById(inputId);
+  
+  if (!input || !input.value) {
+    alert('Please enter a valid amount');
+    return;
+  }
+
+  const balance = parseFloat(input.value);
+  
+  try {
+    await window.electronAPI.updateAccountBalance(accountType, balance);
+    await loadData();
+    renderAccountBalances();
+    updateDashboard();
+    input.value = '';
+  } catch (error) {
+    console.error('Failed to update balance:', error);
+    alert('Failed to update balance: ' + error.message);
+  }
+}
+
+// Budget Management
+function renderBudget() {
+  console.log('Rendering budget...');
+  
+  const incomeItems = monthlyBudget.filter(item => item.type === 'income');
+  const expenseItems = monthlyBudget.filter(item => item.type === 'expense');
+  
+  const incomeTotal = incomeItems.reduce((sum, item) => sum + item.amount, 0);
+  const expenseTotal = expenseItems.reduce((sum, item) => sum + item.amount, 0);
+  const net = incomeTotal - expenseTotal;
+
+  // Update totals
+  const incomeEl = document.getElementById('budget-income-total');
+  const expenseEl = document.getElementById('budget-expense-total');
+  const netEl = document.getElementById('budget-net');
+  
+  if (incomeEl) incomeEl.textContent = incomeTotal.toFixed(2);
+  if (expenseEl) expenseEl.textContent = expenseTotal.toFixed(2);
+  if (netEl) {
+    netEl.textContent = net.toFixed(2);
+    netEl.style.color = net >= 0 ? '#27ae60' : '#e74c3c';
+  }
+
+  // Render income list
+  const incomeList = document.getElementById('budget-income-list');
+  if (incomeList) {
+    incomeList.innerHTML = '';
+    incomeItems.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'budget-item';
+      div.innerHTML = `
+        <div class="budget-item-info">
+          <div class="budget-item-name">${item.name}</div>
+          <div class="budget-item-category">${item.category} • Day ${item.day_of_month}</div>
+        </div>
+        <div class="budget-item-amount income">${item.amount.toFixed(2)}</div>
+        <div class="budget-item-actions">
+          <button onclick="editBudgetItem('${item.id}')" class="edit-btn">Edit</button>
+          <button onclick="deleteBudgetItem('${item.id}')" class="delete-btn">Delete</button>
+        </div>
+      `;
+      incomeList.appendChild(div);
+    });
+  }
+
+  // Render expense list
+  const expenseList = document.getElementById('budget-expense-list');
+  if (expenseList) {
+    expenseList.innerHTML = '';
+    expenseItems.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'budget-item';
+      div.innerHTML = `
+        <div class="budget-item-info">
+          <div class="budget-item-name">${item.name}</div>
+          <div class="budget-item-category">${item.category} • Day ${item.day_of_month}</div>
+        </div>
+        <div class="budget-item-amount expense">${item.amount.toFixed(2)}</div>
+        <div class="budget-item-actions">
+          <button onclick="editBudgetItem('${item.id}')" class="edit-btn">Edit</button>
+          <button onclick="deleteBudgetItem('${item.id}')" class="delete-btn">Delete</button>
+        </div>
+      `;
+      expenseList.appendChild(div);
+    });
+  }
+
+  // Render budget comparison chart
+  if (typeof Chart !== 'undefined' && budgetComparison.length > 0) {
+    const canvas = document.getElementById('budget-chart');
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (charts.budget) charts.budget.destroy();
+      
+      const labels = budgetComparison.map(item => item.name);
+      const budgetedData = budgetComparison.map(item => item.budgeted);
+      const actualData = budgetComparison.map(item => item.actual);
+      
+      charts.budget = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Budgeted',
+              data: budgetedData,
+              backgroundColor: '#3498db'
+            },
+            {
+              label: 'Actual',
+              data: actualData,
+              backgroundColor: '#e74c3c'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Budget vs Actual (This Month)'
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+  }
+}
+
+async function saveBudgetItem() {
+  console.log('Saving budget item...');
+  
+  const id = document.getElementById('budget-id').value || uuidv4();
+  const budgetItem = {
+    id,
+    name: document.getElementById('budget-name').value,
+    amount: parseFloat(document.getElementById('budget-amount').value),
+    type: document.querySelector('input[name="budget-type"]:checked').value,
+    category: document.getElementById('budget-category').value,
+    day_of_month: parseInt(document.getElementById('budget-day').value)
+  };
+
+  try {
+    if (document.getElementById('budget-id').value) {
+      await window.electronAPI.updateBudgetItem(budgetItem);
+    } else {
+      await window.electronAPI.addBudgetItem(budgetItem);
+    }
+    await loadData();
+    closeModal('budget-modal');
+    renderBudget();
+    updateDashboard();
+  } catch (error) {
+    console.error('Failed to save budget item:', error);
+    alert('Failed to save budget item: ' + error.message);
+  }
+}
+
+async function deleteBudgetItem(id) {
+  if (confirm('Are you sure you want to delete this budget item?')) {
+    try {
+      await window.electronAPI.deleteBudgetItem(id);
+      await loadData();
+      renderBudget();
+      updateDashboard();
+    } catch (error) {
+      console.error('Failed to delete budget item:', error);
+      alert('Failed to delete budget item: ' + error.message);
+    }
+  }
+}
+
+function editBudgetItem(id) {
+  const item = monthlyBudget.find(item => item.id === id);
+  if (item) {
+    document.getElementById('budget-id').value = item.id;
+    document.getElementById('budget-name').value = item.name;
+    document.getElementById('budget-amount').value = item.amount;
+    document.getElementById('budget-category').value = item.category;
+    document.getElementById('budget-day').value = item.day_of_month;
+    document.querySelector(`input[name="budget-type"][value="${item.type}"]`).checked = true;
+    openBudgetModal();
   }
 }
 
@@ -222,10 +447,7 @@ function renderTransactions() {
   console.log('Rendering transactions...');
   
   const tbody = document.getElementById('transactions-list');
-  if (!tbody) {
-    console.error('Transactions list element not found');
-    return;
-  }
+  if (!tbody) return;
   
   tbody.innerHTML = '';
 
@@ -235,8 +457,9 @@ function renderTransactions() {
       <td>${new Date(transaction.date).toLocaleDateString()}</td>
       <td>${transaction.description}</td>
       <td>${transaction.category}</td>
-      <td class="${transaction.type}">$${Math.abs(transaction.amount).toFixed(2)}</td>
+      <td class="${transaction.type}">${Math.abs(transaction.amount).toFixed(2)}</td>
       <td>${transaction.type}</td>
+      <td>${transaction.account_type || 'N/A'}</td>
       <td>
         <button onclick="editTransaction('${transaction.id}')" class="edit-btn">Edit</button>
         <button onclick="deleteTransaction('${transaction.id}')" class="delete-btn">Delete</button>
@@ -244,15 +467,6 @@ function renderTransactions() {
     `;
     tbody.appendChild(tr);
   });
-}
-
-function renderSavingsGoals() {
-  console.log('Rendering savings goals...');
-  // Add implementation for savings goals rendering
-  const goalsGrid = document.getElementById('goals-grid');
-  if (goalsGrid) {
-    goalsGrid.innerHTML = '<p>Savings goals will be displayed here.</p>';
-  }
 }
 
 async function saveTransaction() {
@@ -265,23 +479,20 @@ async function saveTransaction() {
     description: document.getElementById('transaction-description').value,
     amount: parseFloat(document.getElementById('transaction-amount').value),
     category: document.getElementById('transaction-category').value,
-    type: document.querySelector('input[name="type"]:checked').value
+    type: document.querySelector('input[name="type"]:checked').value,
+    account_type: document.getElementById('transaction-account').value
   };
 
   try {
-    if (window.electronAPI) {
-      if (document.getElementById('transaction-id').value) {
-        await window.electronAPI.updateTransaction(transaction);
-      } else {
-        await window.electronAPI.addTransaction(transaction);
-      }
-      await loadData();
-      closeModal();
-      renderTransactions();
-      updateDashboard();
+    if (document.getElementById('transaction-id').value) {
+      await window.electronAPI.updateTransaction(transaction);
     } else {
-      console.error('electronAPI not available');
+      await window.electronAPI.addTransaction(transaction);
     }
+    await loadData();
+    closeModal('transaction-modal');
+    renderTransactions();
+    updateDashboard();
   } catch (error) {
     console.error('Failed to save transaction:', error);
     alert('Failed to save transaction: ' + error.message);
@@ -291,12 +502,10 @@ async function saveTransaction() {
 async function deleteTransaction(id) {
   if (confirm('Are you sure you want to delete this transaction?')) {
     try {
-      if (window.electronAPI) {
-        await window.electronAPI.deleteTransaction(id);
-        await loadData();
-        renderTransactions();
-        updateDashboard();
-      }
+      await window.electronAPI.deleteTransaction(id);
+      await loadData();
+      renderTransactions();
+      updateDashboard();
     } catch (error) {
       console.error('Failed to delete transaction:', error);
       alert('Failed to delete transaction: ' + error.message);
@@ -305,8 +514,6 @@ async function deleteTransaction(id) {
 }
 
 function editTransaction(id) {
-  console.log('Editing transaction:', id);
-  // Find the transaction and populate the form
   const transaction = transactions.find(t => t.id === id);
   if (transaction) {
     document.getElementById('transaction-id').value = transaction.id;
@@ -314,8 +521,123 @@ function editTransaction(id) {
     document.getElementById('transaction-description').value = transaction.description;
     document.getElementById('transaction-amount').value = transaction.amount;
     document.getElementById('transaction-category').value = transaction.category;
+    document.getElementById('transaction-account').value = transaction.account_type || 'checking';
     document.querySelector(`input[name="type"][value="${transaction.type}"]`).checked = true;
     openTransactionModal();
+  }
+}
+
+// Savings Goals
+function renderSavingsGoals() {
+  console.log('Rendering savings goals...');
+  
+  const goalsGrid = document.getElementById('goals-grid');
+  if (!goalsGrid) return;
+  
+  goalsGrid.innerHTML = '';
+
+  if (savingsGoals.length === 0) {
+    goalsGrid.innerHTML = '<div class="info-message"><p>No savings goals yet. Create your first goal to start tracking your progress!</p></div>';
+    return;
+  }
+
+  savingsGoals.forEach(goal => {
+    const progress = goal.target > 0 ? (goal.current / goal.target * 100) : 0;
+    const remaining = goal.target - goal.current;
+    
+    const div = document.createElement('div');
+    div.className = 'goal-card';
+    div.innerHTML = `
+      <div class="goal-header">
+        <div class="goal-name">${goal.name}</div>
+        <div class="budget-item-actions">
+          <button onclick="editSavingsGoal('${goal.id}')" class="edit-btn">Edit</button>
+          <button onclick="deleteSavingsGoal('${goal.id}')" class="delete-btn">Delete</button>
+        </div>
+      </div>
+      
+      <div class="goal-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${Math.min(progress, 100)}%"></div>
+        </div>
+        <div class="goal-details">
+          <span>${progress.toFixed(1)}% complete</span>
+          <span>${goal.deadline ? new Date(goal.deadline).toLocaleDateString() : 'No deadline'}</span>
+        </div>
+      </div>
+      
+      <div class="goal-amounts">
+        <div class="goal-amount">
+          <div class="goal-amount-label">Current</div>
+          <div class="goal-amount-value">${goal.current.toFixed(2)}</div>
+        </div>
+        <div class="goal-amount">
+          <div class="goal-amount-label">Target</div>
+          <div class="goal-amount-value">${goal.target.toFixed(2)}</div>
+        </div>
+        <div class="goal-amount">
+          <div class="goal-amount-label">Remaining</div>
+          <div class="goal-amount-value">${remaining.toFixed(2)}</div>
+        </div>
+      </div>
+      
+      ${goal.description ? `<p style="margin-top: 1rem; color: #666; font-size: 0.875rem;">${goal.description}</p>` : ''}
+    `;
+    goalsGrid.appendChild(div);
+  });
+}
+
+async function saveSavingsGoal() {
+  console.log('Saving savings goal...');
+  
+  const id = document.getElementById('goal-id').value || uuidv4();
+  const goal = {
+    id,
+    name: document.getElementById('goal-name').value,
+    target: parseFloat(document.getElementById('goal-target').value),
+    current: parseFloat(document.getElementById('goal-current').value) || 0,
+    deadline: document.getElementById('goal-deadline').value || null,
+    description: document.getElementById('goal-description').value || null
+  };
+
+  try {
+    if (document.getElementById('goal-id').value) {
+      await window.electronAPI.updateSavingsGoal(goal);
+    } else {
+      await window.electronAPI.addSavingsGoal(goal);
+    }
+    await loadData();
+    closeModal('goal-modal');
+    renderSavingsGoals();
+  } catch (error) {
+    console.error('Failed to save savings goal:', error);
+    alert('Failed to save savings goal: ' + error.message);
+  }
+}
+
+async function deleteSavingsGoal(id) {
+  if (confirm('Are you sure you want to delete this savings goal?')) {
+    try {
+      await window.electronAPI.deleteSavingsGoal(id);
+      await loadData();
+      renderSavingsGoals();
+    } catch (error) {
+      console.error('Failed to delete savings goal:', error);
+      alert('Failed to delete savings goal: ' + error.message);
+    }
+  }
+}
+
+function editSavingsGoal(id) {
+  const goal = savingsGoals.find(g => g.id === id);
+  if (goal) {
+    document.getElementById('goal-id').value = goal.id;
+    document.getElementById('goal-name').value = goal.name;
+    document.getElementById('goal-target').value = goal.target;
+    document.getElementById('goal-current').value = goal.current;
+    document.getElementById('goal-deadline').value = goal.deadline || '';
+    document.getElementById('goal-description').value = goal.description || '';
+    openGoalModal();
   }
 }
 
@@ -334,10 +656,7 @@ function updateAnalytics() {
   const filteredTransactions = filterTransactionsByPeriod(transactions, timePeriod);
   
   const canvas = document.getElementById('analytics-chart');
-  if (!canvas) {
-    console.error('Analytics chart canvas not found');
-    return;
-  }
+  if (!canvas) return;
   
   const ctx = canvas.getContext('2d');
   if (charts.analytics) {
@@ -353,6 +672,9 @@ function updateAnalytics() {
       break;
     case 'monthly-trend':
       renderMonthlyTrendChart(ctx, filteredTransactions);
+      break;
+    case 'budget-analysis':
+      renderBudgetAnalysisChart(ctx);
       break;
   }
 }
@@ -392,36 +714,171 @@ function renderCategoryChart(ctx, transactions) {
 }
 
 function renderIncomeExpenseChart(ctx, transactions) {
-  // Placeholder implementation
-  console.log('Income vs Expense chart not yet implemented');
+  const income = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+  const expenses = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+
+  charts.analytics = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Income', 'Expenses', 'Net'],
+      datasets: [{
+        data: [income, expenses, income - expenses],
+        backgroundColor: ['#27ae60', '#e74c3c', income - expenses >= 0 ? '#3498db' : '#e74c3c']
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Income vs Expenses'
+        },
+        legend: {
+          display: false
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      }
+    }
+  });
 }
 
 function renderMonthlyTrendChart(ctx, transactions) {
-  // Placeholder implementation
-  console.log('Monthly trend chart not yet implemented');
+  // Group transactions by month
+  const monthlyData = {};
+  
+  transactions.forEach(t => {
+    const month = t.date.substring(0, 7); // YYYY-MM format
+    if (!monthlyData[month]) {
+      monthlyData[month] = { income: 0, expense: 0 };
+    }
+    monthlyData[month][t.type] += t.amount;
+  });
+
+  const months = Object.keys(monthlyData).sort();
+  const incomeData = months.map(month => monthlyData[month].income);
+  const expenseData = months.map(month => monthlyData[month].expense);
+
+  charts.analytics = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: months,
+      datasets: [
+        {
+          label: 'Income',
+          data: incomeData,
+          borderColor: '#27ae60',
+          backgroundColor: 'rgba(39, 174, 96, 0.1)'
+        },
+        {
+          label: 'Expenses',
+          data: expenseData,
+          borderColor: '#e74c3c',
+          backgroundColor: 'rgba(231, 76, 60, 0.1)'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Monthly Trend'
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+function renderBudgetAnalysisChart(ctx) {
+  if (budgetComparison.length === 0) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('No budget data available', ctx.canvas.width / 2, ctx.canvas.height / 2);
+    return;
+  }
+
+  const labels = budgetComparison.map(item => item.name);
+  const budgetedData = budgetComparison.map(item => item.budgeted);
+  const actualData = budgetComparison.map(item => item.actual);
+
+  charts.analytics = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Budgeted',
+          data: budgetedData,
+          backgroundColor: '#3498db'
+        },
+        {
+          label: 'Actual',
+          data: actualData,
+          backgroundColor: '#e74c3c'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Budget Analysis (This Month)'
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      }
+    }
+  });
 }
 
 // Modal functions
 function openTransactionModal() {
-  console.log('Opening transaction modal...');
   const modal = document.getElementById('transaction-modal');
   if (modal) {
     modal.style.display = 'block';
-    const form = document.getElementById('transaction-form');
-    if (form) {
-      form.reset();
-    }
+    document.getElementById('transaction-form').reset();
     document.getElementById('transaction-id').value = '';
-    const dateInput = document.getElementById('transaction-date');
-    if (dateInput) {
-      dateInput.value = new Date().toISOString().split('T')[0];
-    }
+    document.getElementById('transaction-date').value = new Date().toISOString().split('T')[0];
   }
 }
 
-function closeModal() {
-  console.log('Closing modal...');
-  const modal = document.getElementById('transaction-modal');
+function openBudgetModal() {
+  const modal = document.getElementById('budget-modal');
+  if (modal) {
+    modal.style.display = 'block';
+    document.getElementById('budget-form').reset();
+    document.getElementById('budget-id').value = '';
+  }
+}
+
+function openGoalModal() {
+  const modal = document.getElementById('goal-modal');
+  if (modal) {
+    modal.style.display = 'block';
+    document.getElementById('goal-form').reset();
+    document.getElementById('goal-id').value = '';
+  }
+}
+
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
   if (modal) {
     modal.style.display = 'none';
   }
@@ -429,9 +886,8 @@ function closeModal() {
 
 // Helper functions
 function filterTransactions(searchTerm) {
-  console.log('Filtering transactions with term:', searchTerm);
-  // Implementation for filtering transactions
-  renderTransactions(); // For now, just re-render all
+  // Simple search implementation
+  renderTransactions();
 }
 
 function filterTransactionsByPeriod(transactions, period) {
@@ -456,7 +912,12 @@ function filterTransactionsByPeriod(transactions, period) {
   return transactions.filter(t => new Date(t.date) >= startDate);
 }
 
-// Make functions global so they can be called from HTML onclick attributes
+// Make functions global for HTML onclick attributes
 window.editTransaction = editTransaction;
 window.deleteTransaction = deleteTransaction;
+window.editBudgetItem = editBudgetItem;
+window.deleteBudgetItem = deleteBudgetItem;
+window.editSavingsGoal = editSavingsGoal;
+window.deleteSavingsGoal = deleteSavingsGoal;
+window.updateBalance = updateBalance;
 window.closeModal = closeModal;
