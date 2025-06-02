@@ -1,4 +1,5 @@
-// main.js - Main process
+// main.js - Enhanced with better database integration and error handling
+
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
@@ -14,7 +15,11 @@ const {
   addBudgetItem,
   updateBudgetItem,
   deleteBudgetItem,
-  getBudgetComparison
+  getBudgetComparison,
+  getTransactions,
+  getSavingsGoals,
+  addTransaction,
+  addSavingsGoal
 } = require('./database');
 
 const store = new Store();
@@ -38,23 +43,22 @@ function createWindow() {
 
   // Load the appropriate URL based on environment
   if (isDev) {
-    // In development, load from webpack dev server
     mainWindow.loadURL('http://localhost:3000');
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, load the built files
     const indexPath = path.join(__dirname, 'build', 'index.html');
     mainWindow.loadFile(indexPath);
   }
 
-  // Show window when ready to prevent visual flash
+  // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    console.log('✓ Application window ready');
   });
 
   // Handle navigation errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    console.error('Failed to load:', validatedURL, 'Error:', errorDescription);
+    console.error('✗ Failed to load:', validatedURL, 'Error:', errorDescription);
     
     if (isDev) {
       console.log('Development mode: Make sure webpack dev server is running on http://localhost:3000');
@@ -68,11 +72,25 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    console.log('🚀 Starting application...');
+    
+    // Initialize database first
     await initDatabase();
-    console.log('Database initialized successfully');
+    console.log('✓ Database ready');
+    
+    // Setup IPC handlers
+    setupIpcHandlers();
+    console.log('✓ IPC handlers ready');
+    
+    // Create the main window
     createWindow();
+    console.log('✓ Application started successfully');
+    
   } catch (error) {
-    console.error('Failed to initialize database:', error);
+    console.error('✗ Failed to start application:', error);
+    // Show error dialog to user
+    const { dialog } = require('electron');
+    dialog.showErrorBox('Startup Error', `Failed to initialize database: ${error.message}`);
   }
 
   app.on('activate', () => {
@@ -88,147 +106,260 @@ app.on('window-all-closed', () => {
   }
 });
 
-// IPC handlers for database operations
+// Setup all IPC handlers
+function setupIpcHandlers() {
+  console.log('Setting up IPC handlers...');
 
-// Transaction handlers
-ipcMain.handle('db:addTransaction', async (event, transaction) => {
-  return new Promise((resolve, reject) => {
-    const { id, date, description, amount, category, type, account_type } = transaction;
-    db.run(
-      `INSERT INTO transactions (id, date, description, amount, category, type, account_type) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, date, description, amount, category, type, account_type],
-      function(err) {
-        if (err) reject(err);
-        else resolve({ id, ...transaction });
+  // Transaction handlers
+  ipcMain.handle('db:addTransaction', async (event, transaction) => {
+    try {
+      console.log('Adding transaction:', transaction.description);
+      return await addTransaction(transaction);
+    } catch (error) {
+      console.error('IPC Error - addTransaction:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:getTransactions', async () => {
+    try {
+      const transactions = await getTransactions();
+      console.log(`✓ Retrieved ${transactions.length} transactions`);
+      return transactions;
+    } catch (error) {
+      console.error('IPC Error - getTransactions:', error);
+      return []; // Return empty array on error
+    }
+  });
+
+  ipcMain.handle('db:deleteTransaction', async (event, id) => {
+    try {
+      if (!db()) {
+        throw new Error('Database not initialized');
       }
-    );
+      
+      return new Promise((resolve, reject) => {
+        db().run('DELETE FROM transactions WHERE id = ?', [id], function(err) {
+          if (err) {
+            console.error('Error deleting transaction:', err);
+            reject(err);
+          } else {
+            console.log('✓ Deleted transaction:', id);
+            resolve();
+          }
+        });
+      });
+    } catch (error) {
+      console.error('IPC Error - deleteTransaction:', error);
+      throw error;
+    }
   });
-});
 
-ipcMain.handle('db:getTransactions', async () => {
-  return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM transactions ORDER BY date DESC', (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-});
-
-ipcMain.handle('db:deleteTransaction', async (event, id) => {
-  return new Promise((resolve, reject) => {
-    db.run('DELETE FROM transactions WHERE id = ?', [id], (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-});
-
-ipcMain.handle('db:updateTransaction', async (event, transaction) => {
-  return new Promise((resolve, reject) => {
-    const { id, date, description, amount, category, type, account_type } = transaction;
-    db.run(
-      `UPDATE transactions 
-       SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_type = ?
-       WHERE id = ?`,
-      [date, description, amount, category, type, account_type, id],
-      (err) => {
-        if (err) reject(err);
-        else resolve(transaction);
+  ipcMain.handle('db:updateTransaction', async (event, transaction) => {
+    try {
+      if (!db()) {
+        throw new Error('Database not initialized');
       }
-    );
+      
+      return new Promise((resolve, reject) => {
+        const { id, date, description, amount, category, type, account_type } = transaction;
+        db().run(
+          `UPDATE transactions 
+           SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_type = ?
+           WHERE id = ?`,
+          [date, description, amount, category, type, account_type, id],
+          function(err) {
+            if (err) {
+              console.error('Error updating transaction:', err);
+              reject(err);
+            } else {
+              console.log('✓ Updated transaction:', id);
+              resolve(transaction);
+            }
+          }
+        );
+      });
+    } catch (error) {
+      console.error('IPC Error - updateTransaction:', error);
+      throw error;
+    }
   });
-});
 
-// Savings goals handlers
-ipcMain.handle('db:getSavingsGoals', async () => {
-  return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM savings_goals', (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
+  // Savings goals handlers
+  ipcMain.handle('db:getSavingsGoals', async () => {
+    try {
+      const goals = await getSavingsGoals();
+      console.log(`✓ Retrieved ${goals.length} savings goals`);
+      return goals;
+    } catch (error) {
+      console.error('IPC Error - getSavingsGoals:', error);
+      return [];
+    }
   });
-});
 
-ipcMain.handle('db:addSavingsGoal', async (event, goal) => {
-  return new Promise((resolve, reject) => {
-    const { id, name, target, current, deadline } = goal;
-    db.run(
-      `INSERT INTO savings_goals (id, name, target, current, deadline) 
-       VALUES (?, ?, ?, ?, ?)`,
-      [id, name, target, current, deadline],
-      function(err) {
-        if (err) reject(err);
-        else resolve({ id, ...goal });
+  ipcMain.handle('db:addSavingsGoal', async (event, goal) => {
+    try {
+      console.log('Adding savings goal:', goal.name);
+      return await addSavingsGoal(goal);
+    } catch (error) {
+      console.error('IPC Error - addSavingsGoal:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:updateSavingsGoal', async (event, goal) => {
+    try {
+      if (!db()) {
+        throw new Error('Database not initialized');
       }
-    );
+      
+      return new Promise((resolve, reject) => {
+        const { id, name, target, current, deadline, description } = goal;
+        db().run(
+          `UPDATE savings_goals 
+           SET name = ?, target = ?, current = ?, deadline = ?, description = ?
+           WHERE id = ?`,
+          [name, target, current, deadline, description, id],
+          function(err) {
+            if (err) {
+              console.error('Error updating savings goal:', err);
+              reject(err);
+            } else {
+              console.log('✓ Updated savings goal:', id);
+              resolve(goal);
+            }
+          }
+        );
+      });
+    } catch (error) {
+      console.error('IPC Error - updateSavingsGoal:', error);
+      throw error;
+    }
   });
-});
 
-ipcMain.handle('db:updateSavingsGoal', async (event, goal) => {
-  return new Promise((resolve, reject) => {
-    const { id, name, target, current, deadline } = goal;
-    db.run(
-      `UPDATE savings_goals 
-       SET name = ?, target = ?, current = ?, deadline = ?
-       WHERE id = ?`,
-      [name, target, current, deadline, id],
-      (err) => {
-        if (err) reject(err);
-        else resolve(goal);
+  ipcMain.handle('db:deleteSavingsGoal', async (event, id) => {
+    try {
+      if (!db()) {
+        throw new Error('Database not initialized');
       }
-    );
+      
+      return new Promise((resolve, reject) => {
+        db().run('DELETE FROM savings_goals WHERE id = ?', [id], function(err) {
+          if (err) {
+            console.error('Error deleting savings goal:', err);
+            reject(err);
+          } else {
+            console.log('✓ Deleted savings goal:', id);
+            resolve();
+          }
+        });
+      });
+    } catch (error) {
+      console.error('IPC Error - deleteSavingsGoal:', error);
+      throw error;
+    }
   });
-});
 
-ipcMain.handle('db:deleteSavingsGoal', async (event, id) => {
-  return new Promise((resolve, reject) => {
-    db.run('DELETE FROM savings_goals WHERE id = ?', [id], (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
+  // Account balance handlers
+  ipcMain.handle('db:getAccountBalances', async () => {
+    try {
+      const balances = await getAccountBalances();
+      console.log(`✓ Retrieved ${balances.length} account balances`);
+      return balances;
+    } catch (error) {
+      console.error('IPC Error - getAccountBalances:', error);
+      return [];
+    }
   });
-});
 
-// Account balance handlers
-ipcMain.handle('db:getAccountBalances', async () => {
-  return await getAccountBalances();
-});
+  ipcMain.handle('db:updateAccountBalance', async (event, accountType, balance) => {
+    try {
+      const result = await updateAccountBalance(accountType, balance);
+      console.log(`✓ Updated ${accountType} balance to ${balance}`);
+      return result;
+    } catch (error) {
+      console.error('IPC Error - updateAccountBalance:', error);
+      throw error;
+    }
+  });
 
-ipcMain.handle('db:updateAccountBalance', async (event, accountType, balance) => {
-  return await updateAccountBalance(accountType, balance);
-});
+  // Debt account handlers
+  ipcMain.handle('db:addDebtAccount', async (event, accountData) => {
+    try {
+      return await addDebtAccount(accountData);
+    } catch (error) {
+      console.error('IPC Error - addDebtAccount:', error);
+      throw error;
+    }
+  });
 
-// Debt account handlers
-ipcMain.handle('db:addDebtAccount', async (event, accountData) => {
-  return await addDebtAccount(accountData);
-});
+  ipcMain.handle('db:updateDebtAccount', async (event, id, accountData) => {
+    try {
+      return await updateDebtAccount(id, accountData);
+    } catch (error) {
+      console.error('IPC Error - updateDebtAccount:', error);
+      throw error;
+    }
+  });
 
-ipcMain.handle('db:updateDebtAccount', async (event, id, accountData) => {
-  return await updateDebtAccount(id, accountData);
-});
+  ipcMain.handle('db:deleteDebtAccount', async (event, id) => {
+    try {
+      return await deleteDebtAccount(id);
+    } catch (error) {
+      console.error('IPC Error - deleteDebtAccount:', error);
+      throw error;
+    }
+  });
 
-ipcMain.handle('db:deleteDebtAccount', async (event, id) => {
-  return await deleteDebtAccount(id);
-});
+  // Monthly budget handlers
+  ipcMain.handle('db:getMonthlyBudget', async () => {
+    try {
+      const budget = await getMonthlyBudget();
+      console.log(`✓ Retrieved ${budget.length} budget items`);
+      return budget;
+    } catch (error) {
+      console.error('IPC Error - getMonthlyBudget:', error);
+      return [];
+    }
+  });
 
-// Monthly budget handlers
-ipcMain.handle('db:getMonthlyBudget', async () => {
-  return await getMonthlyBudget();
-});
+  ipcMain.handle('db:addBudgetItem', async (event, budgetItem) => {
+    try {
+      return await addBudgetItem(budgetItem);
+    } catch (error) {
+      console.error('IPC Error - addBudgetItem:', error);
+      throw error;
+    }
+  });
 
-ipcMain.handle('db:addBudgetItem', async (event, budgetItem) => {
-  return await addBudgetItem(budgetItem);
-});
+  ipcMain.handle('db:updateBudgetItem', async (event, budgetItem) => {
+    try {
+      return await updateBudgetItem(budgetItem);
+    } catch (error) {
+      console.error('IPC Error - updateBudgetItem:', error);
+      throw error;
+    }
+  });
 
-ipcMain.handle('db:updateBudgetItem', async (event, budgetItem) => {
-  return await updateBudgetItem(budgetItem);
-});
+  ipcMain.handle('db:deleteBudgetItem', async (event, id) => {
+    try {
+      return await deleteBudgetItem(id);
+    } catch (error) {
+      console.error('IPC Error - deleteBudgetItem:', error);
+      throw error;
+    }
+  });
 
-ipcMain.handle('db:deleteBudgetItem', async (event, id) => {
-  return await deleteBudgetItem(id);
-});
+  ipcMain.handle('db:getBudgetComparison', async () => {
+    try {
+      const comparison = await getBudgetComparison();
+      console.log(`✓ Retrieved budget comparison data`);
+      return comparison;
+    } catch (error) {
+      console.error('IPC Error - getBudgetComparison:', error);
+      return [];
+    }
+  });
 
-ipcMain.handle('db:getBudgetComparison', async () => {
-  return await getBudgetComparison();
-});
+  console.log('✓ All IPC handlers registered');
+}
