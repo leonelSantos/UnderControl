@@ -1,5 +1,14 @@
 // renderer.js - Frontend logic
-const { v4: uuidv4 } = require('uuid');
+// Remove the require statement since it's not available in renderer process
+// const { v4: uuidv4 } = require('uuid'); // This line causes the error
+
+// Create a simple UUID generator instead
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 // State management
 let transactions = [];
@@ -9,17 +18,30 @@ let charts = {};
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadData();
-  setupEventListeners();
-  showView('dashboard');
-  updateDashboard();
+  console.log('DOM loaded, electronAPI available:', !!window.electronAPI);
+  
+  try {
+    await loadData();
+    setupEventListeners();
+    showView('dashboard');
+    updateDashboard();
+    console.log('App initialization complete');
+  } catch (error) {
+    console.error('Initialization error:', error);
+  }
 });
 
 // Data loading
 async function loadData() {
   try {
-    transactions = await window.electronAPI.getTransactions();
-    savingsGoals = await window.electronAPI.getSavingsGoals();
+    if (window.electronAPI) {
+      transactions = await window.electronAPI.getTransactions();
+      savingsGoals = await window.electronAPI.getSavingsGoals();
+      console.log('Loaded transactions:', transactions.length);
+      console.log('Loaded savings goals:', savingsGoals.length);
+    } else {
+      console.error('electronAPI not available');
+    }
   } catch (error) {
     console.error('Failed to load data:', error);
   }
@@ -27,42 +49,76 @@ async function loadData() {
 
 // Event listeners
 function setupEventListeners() {
+  console.log('Setting up event listeners...');
+  
   // Navigation
-  document.querySelectorAll('.nav-btn').forEach(btn => {
+  const navBtns = document.querySelectorAll('.nav-btn');
+  console.log('Found nav buttons:', navBtns.length);
+  
+  navBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
+      console.log('Nav button clicked:', e.target.dataset.view);
       const view = e.target.dataset.view;
       showView(view);
     });
   });
 
   // Transaction form
-  document.getElementById('add-transaction-btn').addEventListener('click', () => {
-    openTransactionModal();
-  });
+  const addTransactionBtn = document.getElementById('add-transaction-btn');
+  console.log('Add transaction button found:', !!addTransactionBtn);
+  
+  if (addTransactionBtn) {
+    addTransactionBtn.addEventListener('click', () => {
+      console.log('Add transaction button clicked');
+      openTransactionModal();
+    });
+  }
 
-  document.getElementById('transaction-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await saveTransaction();
-  });
+  const transactionForm = document.getElementById('transaction-form');
+  if (transactionForm) {
+    transactionForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      console.log('Transaction form submitted');
+      await saveTransaction();
+    });
+  }
 
   // Bank connection
-  document.getElementById('connect-bank-btn').addEventListener('click', async () => {
-    const result = await window.electronAPI.connectBank();
-    alert(result.message + '\n\n' + result.instructions);
-  });
+  const connectBankBtn = document.getElementById('connect-bank-btn');
+  if (connectBankBtn) {
+    connectBankBtn.addEventListener('click', async () => {
+      console.log('Connect bank button clicked');
+      if (window.electronAPI && window.electronAPI.connectBank) {
+        const result = await window.electronAPI.connectBank();
+        alert(result.message + '\n\n' + result.instructions);
+      }
+    });
+  }
 
   // Analytics controls
-  document.getElementById('chart-type').addEventListener('change', updateAnalytics);
-  document.getElementById('time-period').addEventListener('change', updateAnalytics);
+  const chartType = document.getElementById('chart-type');
+  const timePeriod = document.getElementById('time-period');
+  
+  if (chartType) {
+    chartType.addEventListener('change', updateAnalytics);
+  }
+  if (timePeriod) {
+    timePeriod.addEventListener('change', updateAnalytics);
+  }
 
   // Search
-  document.getElementById('search-transactions').addEventListener('input', (e) => {
-    filterTransactions(e.target.value);
-  });
+  const searchInput = document.getElementById('search-transactions');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      filterTransactions(e.target.value);
+    });
+  }
 }
 
 // View management
 function showView(viewName) {
+  console.log('Showing view:', viewName);
+  
   document.querySelectorAll('.view').forEach(view => {
     view.classList.remove('active');
   });
@@ -70,8 +126,16 @@ function showView(viewName) {
     btn.classList.remove('active');
   });
 
-  document.getElementById(`${viewName}-view`).classList.add('active');
-  document.querySelector(`[data-view="${viewName}"]`).classList.add('active');
+  const targetView = document.getElementById(`${viewName}-view`);
+  const targetBtn = document.querySelector(`[data-view="${viewName}"]`);
+  
+  if (targetView) {
+    targetView.classList.add('active');
+  }
+  if (targetBtn) {
+    targetBtn.classList.add('active');
+  }
+  
   currentView = viewName;
 
   // Update view content
@@ -93,6 +157,8 @@ function showView(viewName) {
 
 // Dashboard
 function updateDashboard() {
+  console.log('Updating dashboard...');
+  
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -113,34 +179,54 @@ function updateDashboard() {
   const balance = income - expenses;
   const savingsRate = income > 0 ? ((income - expenses) / income * 100).toFixed(1) : 0;
 
-  document.getElementById('total-balance').textContent = `$${balance.toFixed(2)}`;
-  document.getElementById('monthly-income').textContent = `$${income.toFixed(2)}`;
-  document.getElementById('monthly-expenses').textContent = `$${expenses.toFixed(2)}`;
-  document.getElementById('savings-rate').textContent = `${savingsRate}%`;
-
-  // Update overview chart
-  const ctx = document.getElementById('overview-chart').getContext('2d');
-  if (charts.overview) charts.overview.destroy();
+  // Update DOM elements
+  const totalBalanceEl = document.getElementById('total-balance');
+  const monthlyIncomeEl = document.getElementById('monthly-income');
+  const monthlyExpensesEl = document.getElementById('monthly-expenses');
+  const savingsRateEl = document.getElementById('savings-rate');
   
-  charts.overview = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Income', 'Expenses', 'Savings'],
-      datasets: [{
-        data: [income, expenses, Math.max(0, income - expenses)],
-        backgroundColor: ['#4CAF50', '#f44336', '#2196F3']
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false
+  if (totalBalanceEl) totalBalanceEl.textContent = `$${balance.toFixed(2)}`;
+  if (monthlyIncomeEl) monthlyIncomeEl.textContent = `$${income.toFixed(2)}`;
+  if (monthlyExpensesEl) monthlyExpensesEl.textContent = `$${expenses.toFixed(2)}`;
+  if (savingsRateEl) savingsRateEl.textContent = `${savingsRate}%`;
+
+  // Update overview chart only if Chart.js is available
+  if (typeof Chart !== 'undefined') {
+    const canvas = document.getElementById('overview-chart');
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (charts.overview) charts.overview.destroy();
+      
+      charts.overview = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Income', 'Expenses', 'Savings'],
+          datasets: [{
+            data: [income, expenses, Math.max(0, income - expenses)],
+            backgroundColor: ['#4CAF50', '#f44336', '#2196F3']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
     }
-  });
+  } else {
+    console.warn('Chart.js not available');
+  }
 }
 
 // Transactions
 function renderTransactions() {
+  console.log('Rendering transactions...');
+  
   const tbody = document.getElementById('transactions-list');
+  if (!tbody) {
+    console.error('Transactions list element not found');
+    return;
+  }
+  
   tbody.innerHTML = '';
 
   transactions.forEach(transaction => {
@@ -160,7 +246,18 @@ function renderTransactions() {
   });
 }
 
+function renderSavingsGoals() {
+  console.log('Rendering savings goals...');
+  // Add implementation for savings goals rendering
+  const goalsGrid = document.getElementById('goals-grid');
+  if (goalsGrid) {
+    goalsGrid.innerHTML = '<p>Savings goals will be displayed here.</p>';
+  }
+}
+
 async function saveTransaction() {
+  console.log('Saving transaction...');
+  
   const id = document.getElementById('transaction-id').value || uuidv4();
   const transaction = {
     id,
@@ -172,16 +269,21 @@ async function saveTransaction() {
   };
 
   try {
-    if (document.getElementById('transaction-id').value) {
-      await window.electronAPI.updateTransaction(transaction);
+    if (window.electronAPI) {
+      if (document.getElementById('transaction-id').value) {
+        await window.electronAPI.updateTransaction(transaction);
+      } else {
+        await window.electronAPI.addTransaction(transaction);
+      }
+      await loadData();
+      closeModal();
+      renderTransactions();
+      updateDashboard();
     } else {
-      await window.electronAPI.addTransaction(transaction);
+      console.error('electronAPI not available');
     }
-    await loadData();
-    closeModal();
-    renderTransactions();
-    updateDashboard();
   } catch (error) {
+    console.error('Failed to save transaction:', error);
     alert('Failed to save transaction: ' + error.message);
   }
 }
@@ -189,25 +291,58 @@ async function saveTransaction() {
 async function deleteTransaction(id) {
   if (confirm('Are you sure you want to delete this transaction?')) {
     try {
-      await window.electronAPI.deleteTransaction(id);
-      await loadData();
-      renderTransactions();
-      updateDashboard();
+      if (window.electronAPI) {
+        await window.electronAPI.deleteTransaction(id);
+        await loadData();
+        renderTransactions();
+        updateDashboard();
+      }
     } catch (error) {
+      console.error('Failed to delete transaction:', error);
       alert('Failed to delete transaction: ' + error.message);
     }
   }
 }
 
+function editTransaction(id) {
+  console.log('Editing transaction:', id);
+  // Find the transaction and populate the form
+  const transaction = transactions.find(t => t.id === id);
+  if (transaction) {
+    document.getElementById('transaction-id').value = transaction.id;
+    document.getElementById('transaction-date').value = transaction.date;
+    document.getElementById('transaction-description').value = transaction.description;
+    document.getElementById('transaction-amount').value = transaction.amount;
+    document.getElementById('transaction-category').value = transaction.category;
+    document.querySelector(`input[name="type"][value="${transaction.type}"]`).checked = true;
+    openTransactionModal();
+  }
+}
+
 // Analytics
 function updateAnalytics() {
-  const chartType = document.getElementById('chart-type').value;
-  const timePeriod = document.getElementById('time-period').value;
+  console.log('Updating analytics...');
+  
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not available for analytics');
+    return;
+  }
+  
+  const chartType = document.getElementById('chart-type')?.value || 'spending-category';
+  const timePeriod = document.getElementById('time-period')?.value || 'month';
   
   const filteredTransactions = filterTransactionsByPeriod(transactions, timePeriod);
   
-  const ctx = document.getElementById('analytics-chart').getContext('2d');
-  if (charts.analytics) charts.analytics.destroy();
+  const canvas = document.getElementById('analytics-chart');
+  if (!canvas) {
+    console.error('Analytics chart canvas not found');
+    return;
+  }
+  
+  const ctx = canvas.getContext('2d');
+  if (charts.analytics) {
+    charts.analytics.destroy();
+  }
 
   switch(chartType) {
     case 'spending-category':
@@ -256,19 +391,49 @@ function renderCategoryChart(ctx, transactions) {
   });
 }
 
+function renderIncomeExpenseChart(ctx, transactions) {
+  // Placeholder implementation
+  console.log('Income vs Expense chart not yet implemented');
+}
+
+function renderMonthlyTrendChart(ctx, transactions) {
+  // Placeholder implementation
+  console.log('Monthly trend chart not yet implemented');
+}
+
 // Modal functions
 function openTransactionModal() {
-  document.getElementById('transaction-modal').style.display = 'block';
-  document.getElementById('transaction-form').reset();
-  document.getElementById('transaction-id').value = '';
-  document.getElementById('transaction-date').value = new Date().toISOString().split('T')[0];
+  console.log('Opening transaction modal...');
+  const modal = document.getElementById('transaction-modal');
+  if (modal) {
+    modal.style.display = 'block';
+    const form = document.getElementById('transaction-form');
+    if (form) {
+      form.reset();
+    }
+    document.getElementById('transaction-id').value = '';
+    const dateInput = document.getElementById('transaction-date');
+    if (dateInput) {
+      dateInput.value = new Date().toISOString().split('T')[0];
+    }
+  }
 }
 
 function closeModal() {
-  document.getElementById('transaction-modal').style.display = 'none';
+  console.log('Closing modal...');
+  const modal = document.getElementById('transaction-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
 }
 
 // Helper functions
+function filterTransactions(searchTerm) {
+  console.log('Filtering transactions with term:', searchTerm);
+  // Implementation for filtering transactions
+  renderTransactions(); // For now, just re-render all
+}
+
 function filterTransactionsByPeriod(transactions, period) {
   const now = new Date();
   let startDate;
@@ -290,3 +455,8 @@ function filterTransactionsByPeriod(transactions, period) {
 
   return transactions.filter(t => new Date(t.date) >= startDate);
 }
+
+// Make functions global so they can be called from HTML onclick attributes
+window.editTransaction = editTransaction;
+window.deleteTransaction = deleteTransaction;
+window.closeModal = closeModal;
