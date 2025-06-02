@@ -1,4 +1,4 @@
-// database.js - Enhanced version with better error handling and data loading
+// database.js - Enhanced version with multiple account support
 
 const initSqlJs = require('sql.js');
 const fs = require('fs');
@@ -46,8 +46,11 @@ const initDatabase = async () => {
     // Create tables (this is safe to run even if tables exist)
     createTables();
     
+    // Migrate existing data if needed
+    migrateExistingData();
+    
     // Insert default data only if needed
-    //insertDefaultData();
+    insertDefaultData();
     
     // Save database to file
     saveDatabase();
@@ -60,7 +63,181 @@ const initDatabase = async () => {
   }
 };
 
-// Enhanced helper functions with better error handling
+// Create tables function with enhanced account support
+const createTables = () => {
+  console.log('Creating/verifying database tables...');
+  
+  // Enhanced accounts table to support multiple accounts of same type
+  db.run(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_type TEXT NOT NULL CHECK(account_type IN ('checking', 'savings', 'credit_card', 'student_loan')),
+      account_name TEXT NOT NULL,
+      initial_balance REAL NOT NULL DEFAULT 0,
+      interest_rate REAL DEFAULT 0,
+      minimum_payment REAL DEFAULT 0,
+      due_date INTEGER DEFAULT 1,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Updated transactions table with account_id reference
+  db.run(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      category TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+      account_id INTEGER,
+      account_type TEXT, -- Keep for backward compatibility
+      tags TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+    )
+  `);
+
+  // Legacy account_balances table for backward compatibility
+  db.run(`
+    CREATE TABLE IF NOT EXISTS account_balances (
+      id INTEGER PRIMARY KEY,
+      account_type TEXT NOT NULL CHECK(account_type IN ('checking', 'savings', 'credit_card', 'student_loan')),
+      balance REAL NOT NULL DEFAULT 0,
+      account_name TEXT,
+      interest_rate REAL DEFAULT 0,
+      minimum_payment REAL DEFAULT 0,
+      due_date INTEGER DEFAULT 1,
+      last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Savings goals table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS savings_goals (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      target REAL NOT NULL,
+      current REAL DEFAULT 0,
+      deadline TEXT,
+      description TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Monthly budget table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS monthly_budget (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+      category TEXT NOT NULL,
+      day_of_month INTEGER DEFAULT 1,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  console.log('✓ Tables created/verified');
+};
+
+// Migrate existing data from old structure to new structure
+const migrateExistingData = () => {
+  try {
+    console.log('Checking for data migration...');
+    
+    // Check if we have data in account_balances but not in accounts
+    const accountBalancesResult = db.exec('SELECT COUNT(*) as count FROM account_balances');
+    const accountsResult = db.exec('SELECT COUNT(*) as count FROM accounts');
+    
+    const hasOldData = accountBalancesResult.length > 0 && accountBalancesResult[0].values[0][0] > 0;
+    const hasNewData = accountsResult.length > 0 && accountsResult[0].values[0][0] > 0;
+    
+    if (hasOldData && !hasNewData) {
+      console.log('Migrating data from account_balances to accounts...');
+      
+      // Migrate account_balances to accounts table
+      db.run(`
+        INSERT INTO accounts (account_type, account_name, initial_balance, interest_rate, minimum_payment, due_date)
+        SELECT 
+          account_type,
+          COALESCE(account_name, 
+            CASE account_type 
+              WHEN 'checking' THEN 'Primary Checking'
+              WHEN 'savings' THEN 'Primary Savings'
+              WHEN 'credit_card' THEN 'Credit Card'
+              WHEN 'student_loan' THEN 'Student Loan'
+              ELSE account_type
+            END
+          ) as account_name,
+          balance,
+          COALESCE(interest_rate, 0),
+          COALESCE(minimum_payment, 0),
+          COALESCE(due_date, 1)
+        FROM account_balances
+      `);
+      
+      // Update transactions to reference the new account IDs where possible
+      const accountMappings = db.exec(`
+        SELECT id, account_type FROM accounts
+      `);
+      
+      if (accountMappings.length > 0) {
+        accountMappings[0].values.forEach(([id, type]) => {
+          db.run(`
+            UPDATE transactions 
+            SET account_id = ? 
+            WHERE account_type = ? AND account_id IS NULL
+          `, [id, type]);
+        });
+      }
+      
+      console.log('✓ Data migration completed');
+    }
+  } catch (error) {
+    console.warn('⚠ Data migration failed:', error.message);
+  }
+};
+
+// Insert default data only if tables are empty
+const insertDefaultData = () => {
+  try {
+    // Check if accounts table is empty
+    const result = db.exec('SELECT COUNT(*) as count FROM accounts');
+    const isEmpty = result.length === 0 || result[0].values[0][0] === 0;
+    
+    if (isEmpty) {
+      console.log('Inserting default accounts...');
+      
+      // Insert default checking and savings accounts
+      db.run(`
+        INSERT INTO accounts (account_type, account_name, initial_balance) VALUES 
+        ('checking', 'Primary Checking', 0),
+        ('savings', 'Primary Savings', 0)
+      `);
+      
+      // Also ensure legacy account_balances has these for backward compatibility
+      db.run(`
+        INSERT OR REPLACE INTO account_balances (account_type, balance, account_name) VALUES 
+        ('checking', 0, 'Primary Checking'),
+        ('savings', 0, 'Primary Savings')
+      `);
+      
+      console.log('✓ Default accounts created');
+    }
+  } catch (error) {
+    console.warn('⚠ Could not insert default data:', error.message);
+  }
+};
+
+// Get all accounts with calculated balances
 const getAccountBalances = () => {
   try {
     if (!db) {
@@ -69,7 +246,31 @@ const getAccountBalances = () => {
     }
 
     const results = [];
-    const res = db.exec('SELECT * FROM account_balances ORDER BY account_type');
+    
+    // Get accounts with calculated balances from transactions
+    const res = db.exec(`
+      SELECT 
+        a.id,
+        a.account_type,
+        a.account_name,
+        a.initial_balance,
+        a.interest_rate,
+        a.minimum_payment,
+        a.due_date,
+        a.is_active,
+        COALESCE(a.initial_balance, 0) + COALESCE(t.transaction_total, 0) as balance
+      FROM accounts a
+      LEFT JOIN (
+        SELECT 
+          account_id,
+          SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) as transaction_total
+        FROM transactions
+        WHERE account_id IS NOT NULL
+        GROUP BY account_id
+      ) t ON a.id = t.account_id
+      WHERE a.is_active = 1
+      ORDER BY a.account_type, a.account_name
+    `);
     
     if (res.length > 0) {
       const columns = res[0].columns;
@@ -84,17 +285,130 @@ const getAccountBalances = () => {
       });
     }
     
+    // Also include legacy account_balances for backward compatibility
+    const legacyRes = db.exec(`
+      SELECT 
+        account_type,
+        balance,
+        account_name,
+        interest_rate,
+        minimum_payment,
+        due_date,
+        last_updated
+      FROM account_balances 
+      WHERE account_type NOT IN (
+        SELECT DISTINCT account_type FROM accounts WHERE is_active = 1
+      )
+    `);
+    
+    if (legacyRes.length > 0) {
+      const columns = legacyRes[0].columns;
+      const values = legacyRes[0].values;
+      
+      values.forEach(row => {
+        const obj = {};
+        columns.forEach((col, index) => {
+          obj[col] = row[index];
+        });
+        results.push(obj);
+      });
+    }
+    
     console.log(`✓ Loaded ${results.length} account balances`);
     return results;
   } catch (error) {
     console.error('✗ Error getting account balances:', error);
-    return []; // Return empty array instead of throwing
+    return [];
   }
 };
 
-// Database functions to add to your database.js file
+// Add a new account
+const addAccount = (accountData) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
 
-// Account balance functions
+    console.log('Database: Adding account with data:', accountData);
+    
+    const { account_type, account_name, initial_balance, interest_rate, minimum_payment, due_date } = accountData;
+    
+    // Use db.run for sql.js
+    db.run(`
+      INSERT INTO accounts (account_type, account_name, initial_balance, interest_rate, minimum_payment, due_date) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      account_type, 
+      account_name, 
+      initial_balance || 0, 
+      interest_rate || 0, 
+      minimum_payment || 0, 
+      due_date || 1
+    ]);
+    
+    saveDatabase();
+    
+    // Get the last inserted row id
+    const result = db.exec('SELECT last_insert_rowid() as id');
+    const id = result[0].values[0][0];
+    
+    console.log(`✓ Added account: ${account_name} (${account_type}) with ID: ${id}`);
+    return { id, ...accountData };
+  } catch (error) {
+    console.error('✗ Error adding account:', error);
+    throw error;
+  }
+};
+
+// Update account
+const updateAccount = (id, accountData) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+
+    console.log('Database: Updating account with ID:', id, 'Data:', accountData);
+
+    const { account_name, initial_balance, interest_rate, minimum_payment, due_date } = accountData;
+    
+    db.run(`
+      UPDATE accounts 
+      SET account_name = ?, initial_balance = ?, interest_rate = ?, minimum_payment = ?, due_date = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [account_name, initial_balance, interest_rate || 0, minimum_payment || 0, due_date || 1, id]);
+    
+    saveDatabase();
+    console.log(`✓ Updated account: ${account_name} (ID: ${id})`);
+    return { id, ...accountData };
+  } catch (error) {
+    console.error('✗ Error updating account:', error);
+    throw error;
+  }
+};
+
+// Delete account (soft delete)
+const deleteAccount = (id) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+
+    // Soft delete by setting is_active to 0
+    db.run('UPDATE accounts SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [id]);
+    
+    // Clear account_id from transactions for deleted account
+    db.run('UPDATE transactions SET account_id = NULL WHERE account_id = ?', [id]);
+    
+    saveDatabase();
+    console.log(`✓ Deleted account with ID: ${id}`);
+    return true;
+  } catch (error) {
+    console.error('✗ Error deleting account:', error);
+    throw error;
+  }
+};
+
+// Legacy functions for backward compatibility
 const updateAccountBalance = (accountType, balance) => {
   try {
     if (!db) {
@@ -114,24 +428,8 @@ const updateAccountBalance = (accountType, balance) => {
 
 const addDebtAccount = (accountData) => {
   try {
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-
-    const { account_type, balance, account_name, interest_rate, minimum_payment, due_date } = accountData;
-    
-    db.run(`INSERT INTO account_balances (account_type, balance, account_name, interest_rate, minimum_payment, due_date) 
-             VALUES (?, ?, ?, ?, ?, ?)`,
-      [account_type, balance, account_name, interest_rate || 0, minimum_payment || 0, due_date || 1]);
-    
-    saveDatabase();
-    
-    // Get the last inserted row id
-    const result = db.exec('SELECT last_insert_rowid() as id');
-    const id = result[0].values[0][0];
-    
-    console.log(`✓ Added debt account: ${account_name} (${account_type})`);
-    return { id, ...accountData };
+    // Use the new account system
+    return addAccount(accountData);
   } catch (error) {
     console.error('✗ Error adding debt account:', error);
     throw error;
@@ -140,20 +438,7 @@ const addDebtAccount = (accountData) => {
 
 const updateDebtAccount = (id, accountData) => {
   try {
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-
-    const { balance, account_name, interest_rate, minimum_payment, due_date } = accountData;
-    
-    db.run(`UPDATE account_balances 
-            SET balance = ?, account_name = ?, interest_rate = ?, minimum_payment = ?, due_date = ?, last_updated = CURRENT_TIMESTAMP
-            WHERE id = ?`,
-      [balance, account_name, interest_rate || 0, minimum_payment || 0, due_date || 1, id]);
-    
-    saveDatabase();
-    console.log(`✓ Updated debt account: ${account_name} (ID: ${id})`);
-    return accountData;
+    return updateAccount(id, accountData);
   } catch (error) {
     console.error('✗ Error updating debt account:', error);
     throw error;
@@ -162,21 +447,76 @@ const updateDebtAccount = (id, accountData) => {
 
 const deleteDebtAccount = (id) => {
   try {
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-
-    db.run('DELETE FROM account_balances WHERE id = ?', [id]);
-    saveDatabase();
-    console.log(`✓ Deleted debt account with ID: ${id}`);
-    return true;
+    return deleteAccount(id);
   } catch (error) {
     console.error('✗ Error deleting debt account:', error);
     throw error;
   }
 };
 
-// Monthly budget functions
+// Enhanced transaction functions
+const getTransactions = () => {
+  try {
+    if (!db) {
+      console.error('Database not initialized');
+      return [];
+    }
+
+    const results = [];
+    const res = db.exec(`
+      SELECT 
+        t.*,
+        a.account_name,
+        a.account_type as linked_account_type
+      FROM transactions t
+      LEFT JOIN accounts a ON t.account_id = a.id
+      ORDER BY t.date DESC
+    `);
+    
+    if (res.length > 0) {
+      const columns = res[0].columns;
+      const values = res[0].values;
+      
+      values.forEach(row => {
+        const obj = {};
+        columns.forEach((col, index) => {
+          obj[col] = row[index];
+        });
+        results.push(obj);
+      });
+    }
+    
+    console.log(`✓ Loaded ${results.length} transactions`);
+    return results;
+  } catch (error) {
+    console.error('✗ Error getting transactions:', error);
+    return [];
+  }
+};
+
+const addTransaction = (transaction) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+
+    const { id, date, description, amount, category, type, account_id, account_type } = transaction;
+    
+    db.run(`
+      INSERT INTO transactions (id, date, description, amount, category, type, account_id, account_type) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, date, description, amount, category, type, account_id, account_type]);
+    
+    saveDatabase();
+    console.log('✓ Added transaction:', description);
+    return { id, ...transaction };
+  } catch (error) {
+    console.error('✗ Error adding transaction:', error);
+    throw error;
+  }
+};
+
+// Other existing functions remain the same...
 const getMonthlyBudget = () => {
   try {
     if (!db) {
@@ -267,7 +607,6 @@ const deleteBudgetItem = (id) => {
   }
 };
 
-// Get budget vs actual comparison
 const getBudgetComparison = () => {
   try {
     if (!db) {
@@ -307,7 +646,6 @@ const getBudgetComparison = () => {
           obj[col] = row[index];
         });
         
-        // Calculate additional metrics
         obj.difference = obj.budgeted - obj.actual;
         obj.percentage = obj.budgeted > 0 ? (obj.actual / obj.budgeted * 100).toFixed(2) : 0;
         
@@ -319,37 +657,6 @@ const getBudgetComparison = () => {
     return results;
   } catch (error) {
     console.error('✗ Error getting budget comparison:', error);
-    return [];
-  }
-};
-
-const getTransactions = () => {
-  try {
-    if (!db) {
-      console.error('Database not initialized');
-      return [];
-    }
-
-    const results = [];
-    const res = db.exec('SELECT * FROM transactions ORDER BY date DESC');
-    
-    if (res.length > 0) {
-      const columns = res[0].columns;
-      const values = res[0].values;
-      
-      values.forEach(row => {
-        const obj = {};
-        columns.forEach((col, index) => {
-          obj[col] = row[index];
-        });
-        results.push(obj);
-      });
-    }
-    
-    console.log(`✓ Loaded ${results.length} transactions`);
-    return results;
-  } catch (error) {
-    console.error('✗ Error getting transactions:', error);
     return [];
   }
 };
@@ -385,29 +692,6 @@ const getSavingsGoals = () => {
   }
 };
 
-// Add transaction function
-const addTransaction = (transaction) => {
-  try {
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-
-    const { id, date, description, amount, category, type, account_type } = transaction;
-    
-    db.run(`INSERT INTO transactions (id, date, description, amount, category, type, account_type) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, date, description, amount, category, type, account_type]);
-    
-    saveDatabase();
-    console.log('✓ Added transaction:', description);
-    return { id, ...transaction };
-  } catch (error) {
-    console.error('✗ Error adding transaction:', error);
-    throw error;
-  }
-};
-
-// Add savings goal function
 const addSavingsGoal = (goal) => {
   try {
     if (!db) {
@@ -455,65 +739,26 @@ const saveDatabase = () => {
   }
 };
 
-// Create tables function (same as before but with logging)
-const createTables = () => {
-  console.log('Creating/verifying database tables...');
-  
-  // [Include all your existing createTables code here - it's fine as is]
-  
-  // Transactions table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id TEXT PRIMARY KEY,
-      date TEXT NOT NULL,
-      description TEXT NOT NULL,
-      amount REAL NOT NULL,
-      category TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-      account_type TEXT CHECK(account_type IN ('checking', 'savings')),
-      tags TEXT,
-      notes TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Account balances table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS account_balances (
-      id INTEGER PRIMARY KEY,
-      account_type TEXT NOT NULL CHECK(account_type IN ('checking', 'savings', 'credit_card', 'student_loan')),
-      balance REAL NOT NULL DEFAULT 0,
-      account_name TEXT,
-      interest_rate REAL DEFAULT 0,
-      minimum_payment REAL DEFAULT 0,
-      due_date INTEGER DEFAULT 1,
-      last_updated TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // [Include other table creation code...]
-  
-  console.log('✓ Tables created/verified');
-};
-
 // Export all functions
 module.exports = {
   db: () => db,
   initDatabase,
   getAccountBalances,
-  updateAccountBalance,
-  addDebtAccount,
-  updateDebtAccount,
-  deleteDebtAccount,
+  addAccount,
+  updateAccount,
+  deleteAccount,
+  updateAccountBalance, // Legacy
+  addDebtAccount, // Legacy wrapper
+  updateDebtAccount, // Legacy wrapper
+  deleteDebtAccount, // Legacy wrapper
   getMonthlyBudget,
   addBudgetItem,
   updateBudgetItem,
   deleteBudgetItem,
   getBudgetComparison,
   getTransactions,
-  getSavingsGoals,
   addTransaction,
+  getSavingsGoals,
   addSavingsGoal,
-  saveDatabase // Export for manual saving if needed
+  saveDatabase
 };

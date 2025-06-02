@@ -1,4 +1,4 @@
-// preload.js - Bridge between main and renderer
+// preload.js - Enhanced bridge with account management support
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getTransactions: () => ipcRenderer.invoke('db:getTransactions'),
   deleteTransaction: (id) => ipcRenderer.invoke('db:deleteTransaction', id),
   updateTransaction: (transaction) => ipcRenderer.invoke('db:updateTransaction', transaction),
+  
+  // Account management methods (new)
+  addAccount: (accountData) => ipcRenderer.invoke('db:addAccount', accountData),
+  updateAccount: (id, accountData) => ipcRenderer.invoke('db:updateAccount', id, accountData),
+  deleteAccount: (id) => ipcRenderer.invoke('db:deleteAccount', id),
   
   // Savings goals methods
   getSavingsGoals: () => ipcRenderer.invoke('db:getSavingsGoals'),
@@ -18,7 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAccountBalances: () => ipcRenderer.invoke('db:getAccountBalances'),
   updateAccountBalance: (accountType, balance) => ipcRenderer.invoke('db:updateAccountBalance', accountType, balance),
   
-  // Debt account methods (new)
+  // Legacy debt account methods (for backward compatibility)
   addDebtAccount: (accountData) => ipcRenderer.invoke('db:addDebtAccount', accountData),
   updateDebtAccount: (id, accountData) => ipcRenderer.invoke('db:updateDebtAccount', id, accountData),
   deleteDebtAccount: (id) => ipcRenderer.invoke('db:deleteDebtAccount', id),

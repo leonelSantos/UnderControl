@@ -1,4 +1,4 @@
-// main.js - Enhanced with better database integration and error handling
+// main.js - Enhanced with multiple account support
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
@@ -7,10 +7,13 @@ const {
   initDatabase, 
   db, 
   getAccountBalances, 
-  updateAccountBalance,
-  addDebtAccount,
-  updateDebtAccount,
-  deleteDebtAccount,
+  addAccount,
+  updateAccount,
+  deleteAccount,
+  updateAccountBalance, // Legacy
+  addDebtAccount, // Legacy
+  updateDebtAccount, // Legacy
+  deleteDebtAccount, // Legacy
   getMonthlyBudget,
   addBudgetItem,
   updateBudgetItem,
@@ -128,7 +131,7 @@ function setupIpcHandlers() {
       return transactions;
     } catch (error) {
       console.error('IPC Error - getTransactions:', error);
-      return []; // Return empty array on error
+      return [];
     }
   });
 
@@ -162,12 +165,12 @@ function setupIpcHandlers() {
       }
       
       return new Promise((resolve, reject) => {
-        const { id, date, description, amount, category, type, account_type } = transaction;
+        const { id, date, description, amount, category, type, account_id, account_type } = transaction;
         db().run(
           `UPDATE transactions 
-           SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_type = ?
+           SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_id = ?, account_type = ?
            WHERE id = ?`,
-          [date, description, amount, category, type, account_type, id],
+          [date, description, amount, category, type, account_id, account_type, id],
           function(err) {
             if (err) {
               console.error('Error updating transaction:', err);
@@ -181,6 +184,43 @@ function setupIpcHandlers() {
       });
     } catch (error) {
       console.error('IPC Error - updateTransaction:', error);
+      throw error;
+    }
+  });
+
+  // Account management handlers (new)
+  ipcMain.handle('db:addAccount', async (event, accountData) => {
+    try {
+      console.log('IPC: Adding account:', accountData);
+      const result = await addAccount(accountData);
+      console.log('IPC: Account added successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('IPC Error - addAccount:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:updateAccount', async (event, id, accountData) => {
+    try {
+      console.log('IPC: Updating account:', id, accountData);
+      const result = await updateAccount(id, accountData);
+      console.log('IPC: Account updated successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('IPC Error - updateAccount:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('db:deleteAccount', async (event, id) => {
+    try {
+      console.log('IPC: Deleting account:', id);
+      const result = await deleteAccount(id);
+      console.log('IPC: Account deleted successfully');
+      return result;
+    } catch (error) {
+      console.error('IPC Error - deleteAccount:', error);
       throw error;
     }
   });
@@ -283,7 +323,7 @@ function setupIpcHandlers() {
     }
   });
 
-  // Debt account handlers
+  // Legacy debt account handlers (for backward compatibility)
   ipcMain.handle('db:addDebtAccount', async (event, accountData) => {
     try {
       return await addDebtAccount(accountData);

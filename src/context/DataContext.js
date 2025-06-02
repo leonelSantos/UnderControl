@@ -89,6 +89,45 @@ export const DataProvider = ({ children }) => {
     }
   };
 
+  // Account management methods (new)
+  const addAccount = async (accountData) => {
+    try {
+      console.log('DataContext: Adding account', accountData);
+      const newAccount = await window.electronAPI.addAccount(accountData);
+      console.log('DataContext: Account added successfully', newAccount);
+      await loadAccountBalances();
+      return newAccount;
+    } catch (error) {
+      console.error('Failed to add account:', error);
+      throw error;
+    }
+  };
+
+  const updateAccount = async (id, accountData) => {
+    try {
+      console.log('DataContext: Updating account', id, accountData);
+      const updatedAccount = await window.electronAPI.updateAccount(id, accountData);
+      console.log('DataContext: Account updated successfully', updatedAccount);
+      await loadAccountBalances();
+      return updatedAccount;
+    } catch (error) {
+      console.error('Failed to update account:', error);
+      throw error;
+    }
+  };
+
+  const deleteAccount = async (id) => {
+    try {
+      console.log('DataContext: Deleting account', id);
+      await window.electronAPI.deleteAccount(id);
+      console.log('DataContext: Account deleted successfully');
+      await loadAccountBalances();
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+      throw error;
+    }
+  };
+
   // Savings goals methods
   const addSavingsGoal = async (goal) => {
     try {
@@ -144,7 +183,7 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // Debt account methods
+  // Legacy debt account methods (for backward compatibility)
   const addDebtAccount = async (accountData) => {
     try {
       const newAccount = await window.electronAPI.addDebtAccount(accountData);
@@ -248,19 +287,37 @@ export const DataProvider = ({ children }) => {
     
     // Methods
     loadData,
+    
+    // Transaction methods
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    
+    // Account management methods
+    addAccount,
+    updateAccount,
+    deleteAccount,
+    
+    // Savings goal methods
     addSavingsGoal,
     updateSavingsGoal,
     deleteSavingsGoal,
+    
+    // Account balance methods
     updateAccountBalance,
+    loadAccountBalances,
+    
+    // Legacy debt account methods
     addDebtAccount,
     updateDebtAccount,
     deleteDebtAccount,
+    
+    // Budget methods
     addBudgetItem,
     updateBudgetItem,
     deleteBudgetItem,
+    
+    // Utility
     generateId
   };
 
