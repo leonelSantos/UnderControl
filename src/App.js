@@ -14,7 +14,6 @@ import {
   Dashboard as DashboardIcon,
   AccountBalance as AccountIcon,
   Receipt as BudgetIcon,
-  List as TransactionsIcon,
   Savings as SavingsIcon,
   Analytics as AnalyticsIcon
 } from '@mui/icons-material';
@@ -23,7 +22,6 @@ import {
 import Dashboard from './components/Dashboard';
 import Accounts from './components/Accounts';
 import Budget from './components/Budget';
-import Transactions from './components/Transactions';
 import SavingsGoals from './components/SavingsGoals';
 import Analytics from './components/Analytics';
 
@@ -59,7 +57,6 @@ function App() {
     { label: 'Dashboard', icon: <DashboardIcon />, component: Dashboard },
     { label: 'Accounts', icon: <AccountIcon />, component: Accounts },
     { label: 'Budget', icon: <BudgetIcon />, component: Budget },
-    { label: 'Transactions', icon: <TransactionsIcon />, component: Transactions },
     { label: 'Savings', icon: <SavingsIcon />, component: SavingsGoals },
     { label: 'Analytics', icon: <AnalyticsIcon />, component: Analytics },
   ];
