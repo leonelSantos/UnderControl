@@ -5,21 +5,60 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev",
-    "build": "electron-builder",
-    "dist": "electron-builder --publish=never"
+    "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+    "dev:react": "webpack serve --mode development --port 3000",
+    "dev:electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron . --dev",
+    "build": "npm run build:react && electron-builder",
+    "build:react": "webpack --mode production",
+    "dist": "npm run build:react && electron-builder --publish=never",
+    "electron": "electron .",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": ["electron", "finance", "tracker", "budget", "savings"],
   "author": "Leo Santos",
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.0.0",
-    "electron-builder": "^24.0.0"
+    "electron-builder": "^24.0.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^4.15.1",
+    "html-webpack-plugin": "^5.5.3",
+    "css-loader": "^6.8.1",
+    "style-loader": "^3.3.3",
+    "@babel/core": "^7.22.0",
+    "@babel/preset-react": "^7.22.0",
+    "babel-loader": "^9.1.2",
+    "concurrently": "^8.2.0",
+    "wait-on": "^7.0.1",
+    "cross-env": "^7.0.3",
+    "buffer": "^6.0.3",
+    "process": "^0.11.10",
+    "util": "^0.12.5",
+    "path-browserify": "^1.0.1",
+    "crypto-browserify": "^3.12.0",
+    "stream-browserify": "^3.0.0",
+    "vm-browserify": "^1.1.2",
+    "os-browserify": "^0.3.0",
+    "events": "^3.3.0",
+    "url": "^0.11.3",
+    "assert": "^2.1.0",
+    "querystring-es3": "^0.2.1",
+    "stream-http": "^3.2.0",
+    "https-browserify": "^1.0.0",
+    "browserify-zlib": "^0.2.0"
   },
   "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@mui/material": "^5.14.0",
+    "@mui/icons-material": "^5.14.0",
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
     "chart.js": "^4.4.0",
+    "react-chartjs-2": "^5.2.0",
     "electron-store": "^8.1.0",
-    "sqlite3": "^5.1.6",
+    "sql.js": "^1.10.3",
     "uuid": "^9.0.1"
   },
   "build": {
@@ -28,6 +67,20 @@
     "directories": {
       "output": "dist"
     },
+    "files": [
+      "main.js",
+      "preload.js",
+      "database.js",
+      "build/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": ["**/*"]
+      }
+    ],
     "mac": {
       "category": "public.app-category.finance"
     },
