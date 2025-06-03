@@ -1,4 +1,4 @@
-// main.js - Enhanced with multiple account support
+// main.js - Enhanced with multiple account support and fixed balance calculations
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
@@ -9,6 +9,7 @@ const {
   getAccountBalances, 
   addAccount,
   updateAccount,
+  updateAccountInitialBalance,
   deleteAccount,
   updateAccountBalance, // Legacy
   addDebtAccount, // Legacy
@@ -22,6 +23,8 @@ const {
   getTransactions,
   getSavingsGoals,
   addTransaction,
+  updateTransaction,
+  deleteTransaction,
   addSavingsGoal
 } = require('./database');
 
@@ -137,21 +140,9 @@ function setupIpcHandlers() {
 
   ipcMain.handle('db:deleteTransaction', async (event, id) => {
     try {
-      if (!db()) {
-        throw new Error('Database not initialized');
-      }
-      
-      return new Promise((resolve, reject) => {
-        db().run('DELETE FROM transactions WHERE id = ?', [id], function(err) {
-          if (err) {
-            console.error('Error deleting transaction:', err);
-            reject(err);
-          } else {
-            console.log('✓ Deleted transaction:', id);
-            resolve();
-          }
-        });
-      });
+      const result = await deleteTransaction(id);
+      console.log('✓ Deleted transaction:', id);
+      return result;
     } catch (error) {
       console.error('IPC Error - deleteTransaction:', error);
       throw error;
@@ -160,35 +151,16 @@ function setupIpcHandlers() {
 
   ipcMain.handle('db:updateTransaction', async (event, transaction) => {
     try {
-      if (!db()) {
-        throw new Error('Database not initialized');
-      }
-      
-      return new Promise((resolve, reject) => {
-        const { id, date, description, amount, category, type, account_id, account_type } = transaction;
-        db().run(
-          `UPDATE transactions 
-           SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_id = ?, account_type = ?
-           WHERE id = ?`,
-          [date, description, amount, category, type, account_id, account_type, id],
-          function(err) {
-            if (err) {
-              console.error('Error updating transaction:', err);
-              reject(err);
-            } else {
-              console.log('✓ Updated transaction:', id);
-              resolve(transaction);
-            }
-          }
-        );
-      });
+      const result = await updateTransaction(transaction);
+      console.log('✓ Updated transaction:', transaction.id);
+      return result;
     } catch (error) {
       console.error('IPC Error - updateTransaction:', error);
       throw error;
     }
   });
 
-  // Account management handlers (new)
+  // Account management handlers
   ipcMain.handle('db:addAccount', async (event, accountData) => {
     try {
       console.log('IPC: Adding account:', accountData);
@@ -221,6 +193,19 @@ function setupIpcHandlers() {
       return result;
     } catch (error) {
       console.error('IPC Error - deleteAccount:', error);
+      throw error;
+    }
+  });
+
+  // New handler for updating account initial balance
+  ipcMain.handle('db:updateAccountInitialBalance', async (event, id, balance) => {
+    try {
+      console.log('IPC: Updating account initial balance:', id, balance);
+      const result = await updateAccountInitialBalance(id, balance);
+      console.log('IPC: Account initial balance updated successfully');
+      return result;
+    } catch (error) {
+      console.error('IPC Error - updateAccountInitialBalance:', error);
       throw error;
     }
   });
@@ -304,7 +289,7 @@ function setupIpcHandlers() {
   ipcMain.handle('db:getAccountBalances', async () => {
     try {
       const balances = await getAccountBalances();
-      console.log(`✓ Retrieved ${balances.length} account balances`);
+      console.log(`✓ Retrieved ${balances.length} account balances with corrected calculations`);
       return balances;
     } catch (error) {
       console.error('IPC Error - getAccountBalances:', error);

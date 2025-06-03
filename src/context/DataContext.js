@@ -43,6 +43,13 @@ export const DataProvider = ({ children }) => {
         setAccountBalances(accountBalancesData);
         setMonthlyBudget(monthlyBudgetData);
         setBudgetComparison(budgetComparisonData);
+        
+        console.log('Data loaded successfully:', {
+          transactions: transactionsData.length,
+          accounts: accountBalancesData.length,
+          savings: savingsGoalsData.length,
+          budget: monthlyBudgetData.length
+        });
       }
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -56,7 +63,8 @@ export const DataProvider = ({ children }) => {
     try {
       const newTransaction = await window.electronAPI.addTransaction(transaction);
       setTransactions(prev => [newTransaction, ...prev]);
-      await loadAccountBalances(); // Refresh account balances
+      // Refresh account balances since they are calculated from transactions
+      await loadAccountBalances();
       return newTransaction;
     } catch (error) {
       console.error('Failed to add transaction:', error);
@@ -70,6 +78,7 @@ export const DataProvider = ({ children }) => {
       setTransactions(prev => 
         prev.map(t => t.id === transaction.id ? updatedTransaction : t)
       );
+      // Refresh account balances since they are calculated from transactions
       await loadAccountBalances();
       return updatedTransaction;
     } catch (error) {
@@ -82,6 +91,7 @@ export const DataProvider = ({ children }) => {
     try {
       await window.electronAPI.deleteTransaction(id);
       setTransactions(prev => prev.filter(t => t.id !== id));
+      // Refresh account balances since they are calculated from transactions
       await loadAccountBalances();
     } catch (error) {
       console.error('Failed to delete transaction:', error);
@@ -89,7 +99,7 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // Account management methods (new)
+  // Account management methods
   const addAccount = async (accountData) => {
     try {
       console.log('DataContext: Adding account', accountData);
@@ -122,8 +132,23 @@ export const DataProvider = ({ children }) => {
       await window.electronAPI.deleteAccount(id);
       console.log('DataContext: Account deleted successfully');
       await loadAccountBalances();
+      // Also refresh transactions to update the account references
+      await loadTransactions();
     } catch (error) {
       console.error('Failed to delete account:', error);
+      throw error;
+    }
+  };
+
+  // NEW: Method to update just the initial balance of an account
+  const updateAccountInitialBalance = async (id, balance) => {
+    try {
+      console.log('DataContext: Updating account initial balance', id, balance);
+      await window.electronAPI.updateAccountInitialBalance(id, balance);
+      console.log('DataContext: Account initial balance updated successfully');
+      await loadAccountBalances();
+    } catch (error) {
+      console.error('Failed to update account initial balance:', error);
       throw error;
     }
   };
@@ -168,11 +193,23 @@ export const DataProvider = ({ children }) => {
     try {
       const balances = await window.electronAPI.getAccountBalances();
       setAccountBalances(balances);
+      console.log('Account balances refreshed:', balances.length);
     } catch (error) {
       console.error('Failed to load account balances:', error);
     }
   };
 
+  const loadTransactions = async () => {
+    try {
+      const transactionsData = await window.electronAPI.getTransactions();
+      setTransactions(transactionsData);
+      console.log('Transactions refreshed:', transactionsData.length);
+    } catch (error) {
+      console.error('Failed to load transactions:', error);
+    }
+  };
+
+  // Legacy method - now uses the new account system when possible
   const updateAccountBalance = async (accountType, balance) => {
     try {
       await window.electronAPI.updateAccountBalance(accountType, balance);
@@ -297,6 +334,7 @@ export const DataProvider = ({ children }) => {
     addAccount,
     updateAccount,
     deleteAccount,
+    updateAccountInitialBalance, // NEW
     
     // Savings goal methods
     addSavingsGoal,
@@ -306,6 +344,7 @@ export const DataProvider = ({ children }) => {
     // Account balance methods
     updateAccountBalance,
     loadAccountBalances,
+    loadTransactions, // NEW
     
     // Legacy debt account methods
     addDebtAccount,

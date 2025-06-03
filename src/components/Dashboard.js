@@ -46,7 +46,9 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Search as SearchIcon,
-  ExpandMore as ExpandMoreIcon
+  ExpandMore as ExpandMoreIcon,
+  TrendingUp as IncomeIcon,
+  TrendingDown as ExpenseIcon
 } from '@mui/icons-material';
 import { Doughnut } from 'react-chartjs-2';
 import {
@@ -121,10 +123,10 @@ const Dashboard = () => {
     addTransaction,
     updateTransaction,
     deleteTransaction,
-    addAccount,      // Add this
-    updateAccount,   // Add this
-    deleteAccount,   // Add this
-    loadData,        // Add this
+    addAccount,
+    updateAccount,
+    deleteAccount,
+    loadData,
     generateId,
     loading 
   } = useData();
@@ -157,38 +159,38 @@ const Dashboard = () => {
     due_date: 1
   });
 
-  // Calculate balances based on transactions
+  // Calculate balances and transaction totals for each account
   const calculatedBalances = useMemo(() => {
-    const balances = {};
-    
-    // Initialize with stored balances
-    accountBalances.forEach(account => {
-      balances[account.id || account.account_type] = {
-        ...account,
-        calculatedBalance: account.balance || 0,
-        transactionTotal: 0
-      };
-    });
+  const balances = {};
+  
+  // Initialize with backend-calculated balances
+  accountBalances.forEach(account => {
+    const accountKey = account.id || account.account_type;
+    balances[accountKey] = {
+      ...account,
+      calculatedBalance: account.balance || 0,  // Use backend-calculated balance
+      totalIncome: 0,
+      totalExpenses: 0,
+      transactionCount: 0
+    };
+  });
 
-    // Calculate transaction totals for each account
-    transactions.forEach(transaction => {
-      const accountKey = transaction.account_id || transaction.account_type;
-      if (balances[accountKey]) {
-        if (transaction.type === 'income') {
-          balances[accountKey].transactionTotal += transaction.amount;
-        } else {
-          balances[accountKey].transactionTotal -= transaction.amount;
-        }
+  // Only calculate transaction totals for display purposes
+  transactions.forEach(transaction => {
+    const accountKey = transaction.account_id || transaction.account_type;
+    if (balances[accountKey]) {
+      balances[accountKey].transactionCount++;
+      
+      if (transaction.type === 'income') {
+        balances[accountKey].totalIncome += transaction.amount;
+      } else if (transaction.type === 'expense') {
+        balances[accountKey].totalExpenses += transaction.amount;
       }
-    });
+    }
+  });
 
-    // Update calculated balances
-    Object.keys(balances).forEach(key => {
-      balances[key].calculatedBalance = (balances[key].balance || 0) + balances[key].transactionTotal;
-    });
-
-    return Object.values(balances);
-  }, [accountBalances, transactions]);
+  return Object.values(balances);
+}, [accountBalances, transactions]);
 
   const financialSummary = useMemo(() => {
     const checkingAccounts = calculatedBalances.filter(acc => acc.account_type === 'checking');
@@ -628,14 +630,43 @@ const Dashboard = () => {
                         />
                       </Box>
                       
-                      <Typography variant="h4" color="primary" sx={{ mb: 1 }}>
+                      <Typography variant="h4" color="primary" sx={{ mb: 2 }}>
                         ${account.calculatedBalance.toFixed(2)}
                       </Typography>
                       
+                      {/* Income and Expense Breakdown */}
+                      <Grid container spacing={2} sx={{ mb: 2 }}>
+                        <Grid item xs={6}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <IncomeIcon color="success" fontSize="small" />
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                Total Income
+                              </Typography>
+                              <Typography variant="body1" color="success.main" fontWeight="bold">
+                                ${account.totalIncome.toFixed(2)}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <ExpenseIcon color="error" fontSize="small" />
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                Total Expenses
+                              </Typography>
+                              <Typography variant="body1" color="error.main" fontWeight="bold">
+                                ${account.totalExpenses.toFixed(2)}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Grid>
+                      </Grid>
+                      
                       <Box display="flex" justifyContent="space-between" alignItems="center">
                         <Typography variant="body2" color="textSecondary">
-                          Base: ${account.balance?.toFixed(2) || '0.00'} | 
-                          Transactions: ${account.transactionTotal.toFixed(2)}
+                          {account.transactionCount} transactions | Initial: ${(account.initial_balance || account.balance || 0).toFixed(2)}
                         </Typography>
                         <Box>
                           <IconButton size="small" onClick={() => handleEditAccount(account)}>
@@ -697,12 +728,37 @@ const Dashboard = () => {
                           ${Math.abs(account.calculatedBalance).toFixed(2)}
                         </Typography>
                         
-                        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                          Base: ${account.balance?.toFixed(2) || '0.00'} | 
-                          Transactions: ${account.transactionTotal.toFixed(2)}
-                        </Typography>
+                        {/* Income and Expense Breakdown for Debt Accounts */}
+                        <Grid container spacing={2} sx={{ mb: 2 }}>
+                          <Grid item xs={6}>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <IncomeIcon color="success" fontSize="small" />
+                              <Box>
+                                <Typography variant="body2" color="textSecondary">
+                                  Payments Made
+                                </Typography>
+                                <Typography variant="body1" color="success.main" fontWeight="bold">
+                                  ${account.totalIncome.toFixed(2)}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <ExpenseIcon color="error" fontSize="small" />
+                              <Box>
+                                <Typography variant="body2" color="textSecondary">
+                                  Charges/Interest
+                                </Typography>
+                                <Typography variant="body1" color="error.main" fontWeight="bold">
+                                  ${account.totalExpenses.toFixed(2)}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </Grid>
+                        </Grid>
                         
-                        <Grid container spacing={2}>
+                        <Grid container spacing={2} sx={{ mb: 2 }}>
                           <Grid item xs={6}>
                             <Typography variant="body2" color="textSecondary">
                               Interest Rate
@@ -721,10 +777,7 @@ const Dashboard = () => {
                           </Grid>
                           <Grid item xs={12}>
                             <Typography variant="body2" color="textSecondary">
-                              Due Date
-                            </Typography>
-                            <Typography variant="body1" fontWeight="bold">
-                              {account.due_date || 1}{getOrdinalSuffix(account.due_date || 1)} of each month
+                              Due Date: {account.due_date || 1}{getOrdinalSuffix(account.due_date || 1)} of each month | {account.transactionCount} transactions
                             </Typography>
                           </Grid>
                         </Grid>

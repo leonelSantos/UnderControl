@@ -1,4 +1,4 @@
-// database.js - Enhanced version with multiple account support
+// database.js - Fixed version with accurate balance calculations
 
 const initSqlJs = require('sql.js');
 const fs = require('fs');
@@ -237,7 +237,7 @@ const insertDefaultData = () => {
   }
 };
 
-// Get all accounts with calculated balances
+// Get all accounts with CORRECTED calculated balances
 const getAccountBalances = () => {
   try {
     if (!db) {
@@ -247,7 +247,7 @@ const getAccountBalances = () => {
 
     const results = [];
     
-    // Get accounts with calculated balances from transactions
+    // Get accounts with CORRECTED calculated balances from transactions
     const res = db.exec(`
       SELECT 
         a.id,
@@ -263,7 +263,11 @@ const getAccountBalances = () => {
       LEFT JOIN (
         SELECT 
           account_id,
-          SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) as transaction_total
+          SUM(CASE 
+            WHEN type = 'income' THEN amount 
+            WHEN type = 'expense' THEN -amount 
+            ELSE 0 
+          END) as transaction_total
         FROM transactions
         WHERE account_id IS NOT NULL
         GROUP BY account_id
@@ -285,18 +289,31 @@ const getAccountBalances = () => {
       });
     }
     
-    // Also include legacy account_balances for backward compatibility
+    // Also include legacy account_balances for backward compatibility with CORRECTED calculation
     const legacyRes = db.exec(`
       SELECT 
-        account_type,
-        balance,
-        account_name,
-        interest_rate,
-        minimum_payment,
-        due_date,
-        last_updated
-      FROM account_balances 
-      WHERE account_type NOT IN (
+        ab.account_type,
+        ab.balance as initial_balance,
+        ab.account_name,
+        ab.interest_rate,
+        ab.minimum_payment,
+        ab.due_date,
+        ab.last_updated,
+        ab.balance + COALESCE(t.transaction_total, 0) as balance
+      FROM account_balances ab
+      LEFT JOIN (
+        SELECT 
+          account_type,
+          SUM(CASE 
+            WHEN type = 'income' THEN amount 
+            WHEN type = 'expense' THEN -amount 
+            ELSE 0 
+          END) as transaction_total
+        FROM transactions
+        WHERE account_type IS NOT NULL AND account_id IS NULL
+        GROUP BY account_type
+      ) t ON ab.account_type = t.account_type
+      WHERE ab.account_type NOT IN (
         SELECT DISTINCT account_type FROM accounts WHERE is_active = 1
       )
     `);
@@ -314,7 +331,7 @@ const getAccountBalances = () => {
       });
     }
     
-    console.log(`✓ Loaded ${results.length} account balances`);
+    console.log(`✓ Loaded ${results.length} account balances with corrected calculations`);
     return results;
   } catch (error) {
     console.error('✗ Error getting account balances:', error);
@@ -360,7 +377,7 @@ const addAccount = (accountData) => {
   }
 };
 
-// Update account
+// Update account - FIXED to handle balance updates correctly
 const updateAccount = (id, accountData) => {
   try {
     if (!db) {
@@ -382,6 +399,30 @@ const updateAccount = (id, accountData) => {
     return { id, ...accountData };
   } catch (error) {
     console.error('✗ Error updating account:', error);
+    throw error;
+  }
+};
+
+// NEW: Function to update just the initial balance of an account
+const updateAccountInitialBalance = (id, newInitialBalance) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+
+    console.log('Database: Updating account initial balance for ID:', id, 'New balance:', newInitialBalance);
+    
+    db.run(`
+      UPDATE accounts 
+      SET initial_balance = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [newInitialBalance, id]);
+    
+    saveDatabase();
+    console.log(`✓ Updated account initial balance for ID: ${id} to ${newInitialBalance}`);
+    return true;
+  } catch (error) {
+    console.error('✗ Error updating account initial balance:', error);
     throw error;
   }
 };
@@ -408,18 +449,28 @@ const deleteAccount = (id) => {
   }
 };
 
-// Legacy functions for backward compatibility
+// Legacy functions for backward compatibility - FIXED
 const updateAccountBalance = (accountType, balance) => {
   try {
     if (!db) {
       throw new Error('Database not initialized');
     }
 
-    db.run('UPDATE account_balances SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE account_type = ?', 
-      [balance, accountType]);
-    saveDatabase();
-    console.log(`✓ Updated ${accountType} balance to ${balance}`);
-    return true;
+    // Check if we have this account type in the new accounts table
+    const accountCheck = db.exec('SELECT id FROM accounts WHERE account_type = ? AND is_active = 1', [accountType]);
+    
+    if (accountCheck.length > 0 && accountCheck[0].values.length > 0) {
+      // Update the new accounts table
+      const accountId = accountCheck[0].values[0][0];
+      return updateAccountInitialBalance(accountId, balance);
+    } else {
+      // Fall back to legacy table
+      db.run('UPDATE account_balances SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE account_type = ?', 
+        [balance, accountType]);
+      saveDatabase();
+      console.log(`✓ Updated ${accountType} balance to ${balance} (legacy)`);
+      return true;
+    }
   } catch (error) {
     console.error('✗ Error updating account balance:', error);
     throw error;
@@ -470,7 +521,7 @@ const getTransactions = () => {
         a.account_type as linked_account_type
       FROM transactions t
       LEFT JOIN accounts a ON t.account_id = a.id
-      ORDER BY t.date DESC
+      ORDER BY t.date DESC, t.created_at DESC
     `);
     
     if (res.length > 0) {
@@ -508,10 +559,51 @@ const addTransaction = (transaction) => {
     `, [id, date, description, amount, category, type, account_id, account_type]);
     
     saveDatabase();
-    console.log('✓ Added transaction:', description);
+    console.log('✓ Added transaction:', description, `(${type}: ${amount})`);
     return { id, ...transaction };
   } catch (error) {
     console.error('✗ Error adding transaction:', error);
+    throw error;
+  }
+};
+
+// Enhanced update transaction function
+const updateTransaction = (transaction) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+    
+    const { id, date, description, amount, category, type, account_id, account_type } = transaction;
+    db.run(
+      `UPDATE transactions 
+       SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_id = ?, account_type = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [date, description, amount, category, type, account_id, account_type, id]
+    );
+    
+    saveDatabase();
+    console.log('✓ Updated transaction:', id);
+    return transaction;
+  } catch (error) {
+    console.error('✗ Error updating transaction:', error);
+    throw error;
+  }
+};
+
+// Enhanced delete transaction function
+const deleteTransaction = (id) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+    
+    db.run('DELETE FROM transactions WHERE id = ?', [id]);
+    saveDatabase();
+    console.log('✓ Deleted transaction:', id);
+    return true;
+  } catch (error) {
+    console.error('✗ Error deleting transaction:', error);
     throw error;
   }
 };
@@ -626,7 +718,7 @@ const getBudgetComparison = () => {
         b.amount as budgeted,
         b.type,
         b.category,
-        COALESCE(SUM(t.amount), 0) as actual
+        COALESCE(SUM(ABS(t.amount)), 0) as actual
       FROM monthly_budget b
       LEFT JOIN transactions t ON t.category = b.category 
         AND t.type = b.type
@@ -746,8 +838,9 @@ module.exports = {
   getAccountBalances,
   addAccount,
   updateAccount,
+  updateAccountInitialBalance, // NEW
   deleteAccount,
-  updateAccountBalance, // Legacy
+  updateAccountBalance, // Legacy - now properly fixed
   addDebtAccount, // Legacy wrapper
   updateDebtAccount, // Legacy wrapper
   deleteDebtAccount, // Legacy wrapper
@@ -758,6 +851,8 @@ module.exports = {
   getBudgetComparison,
   getTransactions,
   addTransaction,
+  updateTransaction, // NEW
+  deleteTransaction, // NEW
   getSavingsGoals,
   addSavingsGoal,
   saveDatabase

@@ -1,4 +1,4 @@
-// preload.js - Enhanced bridge with account management support
+// preload.js - Enhanced bridge with corrected account balance support
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -8,10 +8,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteTransaction: (id) => ipcRenderer.invoke('db:deleteTransaction', id),
   updateTransaction: (transaction) => ipcRenderer.invoke('db:updateTransaction', transaction),
   
-  // Account management methods (new)
+  // Account management methods
   addAccount: (accountData) => ipcRenderer.invoke('db:addAccount', accountData),
   updateAccount: (id, accountData) => ipcRenderer.invoke('db:updateAccount', id, accountData),
   deleteAccount: (id) => ipcRenderer.invoke('db:deleteAccount', id),
+  updateAccountInitialBalance: (id, balance) => ipcRenderer.invoke('db:updateAccountInitialBalance', id, balance),
   
   // Savings goals methods
   getSavingsGoals: () => ipcRenderer.invoke('db:getSavingsGoals'),
