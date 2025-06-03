@@ -1,20 +1,15 @@
-// main.js - Enhanced with multiple account support and fixed balance calculations
+// main.js - Clean version without legacy code
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const { 
   initDatabase, 
-  db, 
   getAccountBalances, 
   addAccount,
   updateAccount,
   updateAccountInitialBalance,
   deleteAccount,
-  updateAccountBalance, // Legacy
-  addDebtAccount, // Legacy
-  updateDebtAccount, // Legacy
-  deleteDebtAccount, // Legacy
   getMonthlyBudget,
   addBudgetItem,
   updateBudgetItem,
@@ -25,7 +20,9 @@ const {
   addTransaction,
   updateTransaction,
   deleteTransaction,
-  addSavingsGoal
+  addSavingsGoal,
+  updateSavingsGoal,
+  deleteSavingsGoal
 } = require('./database');
 
 const store = new Store();
@@ -197,7 +194,7 @@ function setupIpcHandlers() {
     }
   });
 
-  // New handler for updating account initial balance
+  // Handler for updating account initial balance
   ipcMain.handle('db:updateAccountInitialBalance', async (event, id, balance) => {
     try {
       console.log('IPC: Updating account initial balance:', id, balance);
@@ -234,28 +231,9 @@ function setupIpcHandlers() {
 
   ipcMain.handle('db:updateSavingsGoal', async (event, goal) => {
     try {
-      if (!db()) {
-        throw new Error('Database not initialized');
-      }
-      
-      return new Promise((resolve, reject) => {
-        const { id, name, target, current, deadline, description } = goal;
-        db().run(
-          `UPDATE savings_goals 
-           SET name = ?, target = ?, current = ?, deadline = ?, description = ?
-           WHERE id = ?`,
-          [name, target, current, deadline, description, id],
-          function(err) {
-            if (err) {
-              console.error('Error updating savings goal:', err);
-              reject(err);
-            } else {
-              console.log('✓ Updated savings goal:', id);
-              resolve(goal);
-            }
-          }
-        );
-      });
+      const result = await updateSavingsGoal(goal);
+      console.log('✓ Updated savings goal:', goal.id);
+      return result;
     } catch (error) {
       console.error('IPC Error - updateSavingsGoal:', error);
       throw error;
@@ -264,21 +242,9 @@ function setupIpcHandlers() {
 
   ipcMain.handle('db:deleteSavingsGoal', async (event, id) => {
     try {
-      if (!db()) {
-        throw new Error('Database not initialized');
-      }
-      
-      return new Promise((resolve, reject) => {
-        db().run('DELETE FROM savings_goals WHERE id = ?', [id], function(err) {
-          if (err) {
-            console.error('Error deleting savings goal:', err);
-            reject(err);
-          } else {
-            console.log('✓ Deleted savings goal:', id);
-            resolve();
-          }
-        });
-      });
+      const result = await deleteSavingsGoal(id);
+      console.log('✓ Deleted savings goal:', id);
+      return result;
     } catch (error) {
       console.error('IPC Error - deleteSavingsGoal:', error);
       throw error;
@@ -289,50 +255,11 @@ function setupIpcHandlers() {
   ipcMain.handle('db:getAccountBalances', async () => {
     try {
       const balances = await getAccountBalances();
-      console.log(`✓ Retrieved ${balances.length} account balances with corrected calculations`);
+      console.log(`✓ Retrieved ${balances.length} account balances`);
       return balances;
     } catch (error) {
       console.error('IPC Error - getAccountBalances:', error);
       return [];
-    }
-  });
-
-  ipcMain.handle('db:updateAccountBalance', async (event, accountType, balance) => {
-    try {
-      const result = await updateAccountBalance(accountType, balance);
-      console.log(`✓ Updated ${accountType} balance to ${balance}`);
-      return result;
-    } catch (error) {
-      console.error('IPC Error - updateAccountBalance:', error);
-      throw error;
-    }
-  });
-
-  // Legacy debt account handlers (for backward compatibility)
-  ipcMain.handle('db:addDebtAccount', async (event, accountData) => {
-    try {
-      return await addDebtAccount(accountData);
-    } catch (error) {
-      console.error('IPC Error - addDebtAccount:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('db:updateDebtAccount', async (event, id, accountData) => {
-    try {
-      return await updateDebtAccount(id, accountData);
-    } catch (error) {
-      console.error('IPC Error - updateDebtAccount:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('db:deleteDebtAccount', async (event, id) => {
-    try {
-      return await deleteDebtAccount(id);
-    } catch (error) {
-      console.error('IPC Error - deleteDebtAccount:', error);
-      throw error;
     }
   });
 

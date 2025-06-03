@@ -1,4 +1,4 @@
-// database.js - Fixed version with accurate balance calculations
+// database.js - Clean version without legacy code
 
 const initSqlJs = require('sql.js');
 const fs = require('fs');
@@ -63,11 +63,11 @@ const initDatabase = async () => {
   }
 };
 
-// Create tables function with enhanced account support
+// Create tables function
 const createTables = () => {
   console.log('Creating/verifying database tables...');
   
-  // Enhanced accounts table to support multiple accounts of same type
+  // Accounts table to support multiple accounts of same type
   db.run(`
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +83,7 @@ const createTables = () => {
     )
   `);
 
-  // Updated transactions table with account_id reference
+  // Transactions table with account_id reference
   db.run(`
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
@@ -93,7 +93,7 @@ const createTables = () => {
       category TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
       account_id INTEGER,
-      account_type TEXT, -- Keep for backward compatibility
+      account_type TEXT, -- Keep for backward compatibility during migration
       tags TEXT,
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -102,7 +102,7 @@ const createTables = () => {
     )
   `);
 
-  // Legacy account_balances table for backward compatibility
+  // Legacy account_balances table - kept temporarily for migration
   db.run(`
     CREATE TABLE IF NOT EXISTS account_balances (
       id INTEGER PRIMARY KEY,
@@ -139,6 +139,8 @@ const createTables = () => {
       type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
       category TEXT NOT NULL,
       day_of_month INTEGER DEFAULT 1,
+      month INTEGER,
+      year INTEGER,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -223,13 +225,6 @@ const insertDefaultData = () => {
         ('savings', 'Primary Savings', 0)
       `);
       
-      // Also ensure legacy account_balances has these for backward compatibility
-      db.run(`
-        INSERT OR REPLACE INTO account_balances (account_type, balance, account_name) VALUES 
-        ('checking', 0, 'Primary Checking'),
-        ('savings', 0, 'Primary Savings')
-      `);
-      
       console.log('✓ Default accounts created');
     }
   } catch (error) {
@@ -237,7 +232,7 @@ const insertDefaultData = () => {
   }
 };
 
-// Get all accounts with CORRECTED calculated balances
+// Get all accounts with calculated balances
 const getAccountBalances = () => {
   try {
     if (!db) {
@@ -247,7 +242,7 @@ const getAccountBalances = () => {
 
     const results = [];
     
-    // Get accounts with CORRECTED calculated balances from transactions
+    // Get accounts with calculated balances from transactions
     const res = db.exec(`
       SELECT 
         a.id,
@@ -289,49 +284,7 @@ const getAccountBalances = () => {
       });
     }
     
-    // Also include legacy account_balances for backward compatibility with CORRECTED calculation
-    const legacyRes = db.exec(`
-      SELECT 
-        ab.account_type,
-        ab.balance as initial_balance,
-        ab.account_name,
-        ab.interest_rate,
-        ab.minimum_payment,
-        ab.due_date,
-        ab.last_updated,
-        ab.balance + COALESCE(t.transaction_total, 0) as balance
-      FROM account_balances ab
-      LEFT JOIN (
-        SELECT 
-          account_type,
-          SUM(CASE 
-            WHEN type = 'income' THEN amount 
-            WHEN type = 'expense' THEN -amount 
-            ELSE 0 
-          END) as transaction_total
-        FROM transactions
-        WHERE account_type IS NOT NULL AND account_id IS NULL
-        GROUP BY account_type
-      ) t ON ab.account_type = t.account_type
-      WHERE ab.account_type NOT IN (
-        SELECT DISTINCT account_type FROM accounts WHERE is_active = 1
-      )
-    `);
-    
-    if (legacyRes.length > 0) {
-      const columns = legacyRes[0].columns;
-      const values = legacyRes[0].values;
-      
-      values.forEach(row => {
-        const obj = {};
-        columns.forEach((col, index) => {
-          obj[col] = row[index];
-        });
-        results.push(obj);
-      });
-    }
-    
-    console.log(`✓ Loaded ${results.length} account balances with corrected calculations`);
+    console.log(`✓ Loaded ${results.length} account balances`);
     return results;
   } catch (error) {
     console.error('✗ Error getting account balances:', error);
@@ -350,7 +303,6 @@ const addAccount = (accountData) => {
     
     const { account_type, account_name, initial_balance, interest_rate, minimum_payment, due_date } = accountData;
     
-    // Use db.run for sql.js
     db.run(`
       INSERT INTO accounts (account_type, account_name, initial_balance, interest_rate, minimum_payment, due_date) 
       VALUES (?, ?, ?, ?, ?, ?)
@@ -377,7 +329,7 @@ const addAccount = (accountData) => {
   }
 };
 
-// Update account - FIXED to handle balance updates correctly
+// Update account
 const updateAccount = (id, accountData) => {
   try {
     if (!db) {
@@ -403,7 +355,7 @@ const updateAccount = (id, accountData) => {
   }
 };
 
-// NEW: Function to update just the initial balance of an account
+// Function to update just the initial balance of an account
 const updateAccountInitialBalance = (id, newInitialBalance) => {
   try {
     if (!db) {
@@ -449,63 +401,7 @@ const deleteAccount = (id) => {
   }
 };
 
-// Legacy functions for backward compatibility - FIXED
-const updateAccountBalance = (accountType, balance) => {
-  try {
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-
-    // Check if we have this account type in the new accounts table
-    const accountCheck = db.exec('SELECT id FROM accounts WHERE account_type = ? AND is_active = 1', [accountType]);
-    
-    if (accountCheck.length > 0 && accountCheck[0].values.length > 0) {
-      // Update the new accounts table
-      const accountId = accountCheck[0].values[0][0];
-      return updateAccountInitialBalance(accountId, balance);
-    } else {
-      // Fall back to legacy table
-      db.run('UPDATE account_balances SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE account_type = ?', 
-        [balance, accountType]);
-      saveDatabase();
-      console.log(`✓ Updated ${accountType} balance to ${balance} (legacy)`);
-      return true;
-    }
-  } catch (error) {
-    console.error('✗ Error updating account balance:', error);
-    throw error;
-  }
-};
-
-const addDebtAccount = (accountData) => {
-  try {
-    // Use the new account system
-    return addAccount(accountData);
-  } catch (error) {
-    console.error('✗ Error adding debt account:', error);
-    throw error;
-  }
-};
-
-const updateDebtAccount = (id, accountData) => {
-  try {
-    return updateAccount(id, accountData);
-  } catch (error) {
-    console.error('✗ Error updating debt account:', error);
-    throw error;
-  }
-};
-
-const deleteDebtAccount = (id) => {
-  try {
-    return deleteAccount(id);
-  } catch (error) {
-    console.error('✗ Error deleting debt account:', error);
-    throw error;
-  }
-};
-
-// Enhanced transaction functions
+// Transaction functions
 const getTransactions = () => {
   try {
     if (!db) {
@@ -567,7 +463,6 @@ const addTransaction = (transaction) => {
   }
 };
 
-// Enhanced update transaction function
 const updateTransaction = (transaction) => {
   try {
     if (!db) {
@@ -591,7 +486,6 @@ const updateTransaction = (transaction) => {
   }
 };
 
-// Enhanced delete transaction function
 const deleteTransaction = (id) => {
   try {
     if (!db) {
@@ -608,7 +502,7 @@ const deleteTransaction = (id) => {
   }
 };
 
-// Other existing functions remain the same...
+// Budget functions
 const getMonthlyBudget = () => {
   try {
     if (!db) {
@@ -646,14 +540,14 @@ const addBudgetItem = (budgetItem) => {
       throw new Error('Database not initialized');
     }
 
-    const { id, name, amount, type, category, day_of_month } = budgetItem;
+    const { id, name, amount, type, category, day_of_month, month, year } = budgetItem;
     
-    db.run(`INSERT INTO monthly_budget (id, name, amount, type, category, day_of_month) 
-            VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, name, amount, type, category, day_of_month || 1]);
+    db.run(`INSERT INTO monthly_budget (id, name, amount, type, category, day_of_month, month, year) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, amount, type, category, day_of_month || 1, month, year]);
     
     saveDatabase();
-    console.log(`✓ Added budget item: ${name} (${type}) - $${amount}`);
+    console.log(`✓ Added budget item: ${name} (${type}) - ${amount}`);
     return { id, ...budgetItem };
   } catch (error) {
     console.error('✗ Error adding budget item:', error);
@@ -667,12 +561,12 @@ const updateBudgetItem = (budgetItem) => {
       throw new Error('Database not initialized');
     }
 
-    const { id, name, amount, type, category, day_of_month } = budgetItem;
+    const { id, name, amount, type, category, day_of_month, month, year } = budgetItem;
     
     db.run(`UPDATE monthly_budget 
-            SET name = ?, amount = ?, type = ?, category = ?, day_of_month = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, amount = ?, type = ?, category = ?, day_of_month = ?, month = ?, year = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?`,
-      [name, amount, type, category, day_of_month, id]);
+      [name, amount, type, category, day_of_month, month, year, id]);
     
     saveDatabase();
     console.log(`✓ Updated budget item: ${name} (ID: ${id})`);
@@ -753,6 +647,7 @@ const getBudgetComparison = () => {
   }
 };
 
+// Savings goals functions
 const getSavingsGoals = () => {
   try {
     if (!db) {
@@ -805,7 +700,46 @@ const addSavingsGoal = (goal) => {
   }
 };
 
-// Enhanced save function with error handling
+const updateSavingsGoal = (goal) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+    
+    const { id, name, target, current, deadline, description } = goal;
+    db.run(
+      `UPDATE savings_goals 
+       SET name = ?, target = ?, current = ?, deadline = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [name, target, current, deadline, description, id]
+    );
+    
+    saveDatabase();
+    console.log('✓ Updated savings goal:', id);
+    return goal;
+  } catch (error) {
+    console.error('✗ Error updating savings goal:', error);
+    throw error;
+  }
+};
+
+const deleteSavingsGoal = (id) => {
+  try {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+    
+    db.run('DELETE FROM savings_goals WHERE id = ?', [id]);
+    saveDatabase();
+    console.log('✓ Deleted savings goal:', id);
+    return true;
+  } catch (error) {
+    console.error('✗ Error deleting savings goal:', error);
+    throw error;
+  }
+};
+
+// Save function with error handling
 const saveDatabase = () => {
   try {
     if (!db) {
@@ -835,25 +769,33 @@ const saveDatabase = () => {
 module.exports = {
   db: () => db,
   initDatabase,
+  
+  // Account functions
   getAccountBalances,
   addAccount,
   updateAccount,
-  updateAccountInitialBalance, // NEW
+  updateAccountInitialBalance,
   deleteAccount,
-  updateAccountBalance, // Legacy - now properly fixed
-  addDebtAccount, // Legacy wrapper
-  updateDebtAccount, // Legacy wrapper
-  deleteDebtAccount, // Legacy wrapper
+  
+  // Transaction functions
+  getTransactions,
+  addTransaction,
+  updateTransaction,
+  deleteTransaction,
+  
+  // Budget functions
   getMonthlyBudget,
   addBudgetItem,
   updateBudgetItem,
   deleteBudgetItem,
   getBudgetComparison,
-  getTransactions,
-  addTransaction,
-  updateTransaction, // NEW
-  deleteTransaction, // NEW
+  
+  // Savings goals functions
   getSavingsGoals,
   addSavingsGoal,
+  updateSavingsGoal,
+  deleteSavingsGoal,
+  
+  // Utility
   saveDatabase
 };
