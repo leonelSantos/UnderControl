@@ -1,4 +1,4 @@
-// database.js - Clean version without legacy code
+// database.js - Clean version with full date support only
 
 const initSqlJs = require('sql.js');
 const fs = require('fs');
@@ -130,24 +130,151 @@ const createTables = () => {
     )
   `);
 
-  // Monthly budget table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS monthly_budget (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      amount REAL NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-      category TEXT NOT NULL,
-      day_of_month INTEGER DEFAULT 1,
-      month INTEGER,
-      year INTEGER,
-      is_active INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  // Modern monthly_budget table with full date support only
+  const monthlyBudgetExists = checkTableExists('monthly_budget');
+  
+  if (!monthlyBudgetExists) {
+    // Create new table with clean structure
+    console.log('Creating new monthly_budget table...');
+    db.run(`
+      CREATE TABLE monthly_budget (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+        category TEXT NOT NULL,
+        due_date TEXT NOT NULL, -- Full date in YYYY-MM-DD format
+        is_recurring INTEGER DEFAULT 1, -- Whether this item repeats monthly
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } else {
+    // Migrate existing table to new structure
+    migrateMonthlyBudgetTable();
+  }
 
   console.log('✓ Tables created/verified');
+};
+
+// Check if a table exists
+const checkTableExists = (tableName) => {
+  try {
+    const result = db.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='${tableName}'`);
+    return result.length > 0 && result[0].values.length > 0;
+  } catch (error) {
+    console.warn(`⚠ Could not check if table ${tableName} exists:`, error.message);
+    return false;
+  }
+};
+
+// Migrate existing monthly_budget table to new structure
+const migrateMonthlyBudgetTable = () => {
+  try {
+    console.log('Migrating monthly_budget table to new structure...');
+    
+    // Get current table structure
+    const tableInfo = db.exec("PRAGMA table_info(monthly_budget)");
+    const columns = tableInfo[0]?.values?.map(row => row[1]) || [];
+    
+    console.log('Current monthly_budget columns:', columns);
+    
+    // Check if we need to migrate from old structure
+    const hasOldStructure = columns.includes('month') || columns.includes('year') || columns.includes('day_of_month');
+    const hasNewStructure = columns.includes('due_date') && columns.includes('is_recurring');
+    
+    if (hasOldStructure && !hasNewStructure) {
+      console.log('Migrating from old structure to new structure...');
+      
+      // Backup existing data
+      let existingData = [];
+      try {
+        const result = db.exec('SELECT * FROM monthly_budget');
+        if (result.length > 0) {
+          const cols = result[0].columns;
+          existingData = result[0].values.map(row => {
+            const obj = {};
+            cols.forEach((col, index) => {
+              obj[col] = row[index];
+            });
+            return obj;
+          });
+        }
+        console.log(`Backed up ${existingData.length} existing budget items`);
+      } catch (backupError) {
+        console.warn('Could not backup existing data:', backupError.message);
+        return;
+      }
+      
+      // Drop old table and create new one
+      db.run('DROP TABLE monthly_budget');
+      db.run(`
+        CREATE TABLE monthly_budget (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+          category TEXT NOT NULL,
+          due_date TEXT NOT NULL,
+          is_recurring INTEGER DEFAULT 1,
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      // Migrate data to new structure
+      existingData.forEach(item => {
+        try {
+          // Convert old date format to new format
+          let dueDate;
+          if (item.month && item.year && item.day_of_month) {
+            const year = item.year;
+            const month = String(item.month).padStart(2, '0');
+            const day = String(item.day_of_month).padStart(2, '0');
+            dueDate = `${year}-${month}-${day}`;
+          } else {
+            // Default to current date if no date info available
+            dueDate = new Date().toISOString().split('T')[0];
+          }
+          
+          db.run(`
+            INSERT INTO monthly_budget (
+              id, name, amount, type, category, due_date, is_recurring, is_active, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            item.id,
+            item.name,
+            item.amount,
+            item.type,
+            item.category,
+            dueDate,
+            1, // Default to recurring
+            item.is_active !== undefined ? item.is_active : 1,
+            item.created_at || new Date().toISOString(),
+            item.updated_at || new Date().toISOString()
+          ]);
+        } catch (restoreError) {
+          console.error('Error migrating budget item:', item.id, restoreError.message);
+        }
+      });
+      
+      console.log('✓ Monthly budget table migration completed');
+    } else if (!hasNewStructure) {
+      // Add missing columns to existing table
+      if (!columns.includes('due_date')) {
+        db.run('ALTER TABLE monthly_budget ADD COLUMN due_date TEXT NOT NULL DEFAULT "2025-01-01"');
+      }
+      if (!columns.includes('is_recurring')) {
+        db.run('ALTER TABLE monthly_budget ADD COLUMN is_recurring INTEGER DEFAULT 1');
+      }
+      console.log('✓ Added missing columns to monthly_budget table');
+    }
+    
+  } catch (error) {
+    console.error('✗ Error migrating monthly_budget table:', error.message);
+  }
 };
 
 // Migrate existing data from old structure to new structure
@@ -203,6 +330,7 @@ const migrateExistingData = () => {
       
       console.log('✓ Data migration completed');
     }
+    
   } catch (error) {
     console.warn('⚠ Data migration failed:', error.message);
   }
@@ -502,7 +630,7 @@ const deleteTransaction = (id) => {
   }
 };
 
-// Budget functions
+// Clean budget functions with full date support only
 const getMonthlyBudget = () => {
   try {
     if (!db) {
@@ -511,7 +639,11 @@ const getMonthlyBudget = () => {
     }
 
     const results = [];
-    const res = db.exec('SELECT * FROM monthly_budget WHERE is_active = 1 ORDER BY type, name');
+    const res = db.exec(`
+      SELECT * FROM monthly_budget 
+      WHERE is_active = 1 
+      ORDER BY due_date, type, name
+    `);
     
     if (res.length > 0) {
       const columns = res[0].columns;
@@ -540,14 +672,39 @@ const addBudgetItem = (budgetItem) => {
       throw new Error('Database not initialized');
     }
 
-    const { id, name, amount, type, category, day_of_month, month, year } = budgetItem;
+    console.log('Database: Adding budget item:', budgetItem);
+
+    const { 
+      id, 
+      name, 
+      amount, 
+      type, 
+      category, 
+      due_date,
+      is_recurring
+    } = budgetItem;
     
-    db.run(`INSERT INTO monthly_budget (id, name, amount, type, category, day_of_month, month, year) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, name, amount, type, category, day_of_month || 1, month, year]);
+    // Validate required fields
+    if (!id || !name || !amount || !type || !category || !due_date) {
+      throw new Error('Missing required fields for budget item');
+    }
+    
+    db.run(`
+      INSERT INTO monthly_budget (
+        id, name, amount, type, category, due_date, is_recurring
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id, 
+      name, 
+      amount, 
+      type, 
+      category, 
+      due_date,
+      is_recurring !== undefined ? is_recurring : 1
+    ]);
     
     saveDatabase();
-    console.log(`✓ Added budget item: ${name} (${type}) - ${amount}`);
+    console.log(`✓ Added budget item: ${name} (${type}) - $${amount} - Due: ${due_date}`);
     return { id, ...budgetItem };
   } catch (error) {
     console.error('✗ Error adding budget item:', error);
@@ -561,15 +718,39 @@ const updateBudgetItem = (budgetItem) => {
       throw new Error('Database not initialized');
     }
 
-    const { id, name, amount, type, category, day_of_month, month, year } = budgetItem;
+    console.log('Database: Updating budget item:', budgetItem);
+
+    const { 
+      id, 
+      name, 
+      amount, 
+      type, 
+      category, 
+      due_date,
+      is_recurring
+    } = budgetItem;
     
-    db.run(`UPDATE monthly_budget 
-            SET name = ?, amount = ?, type = ?, category = ?, day_of_month = ?, month = ?, year = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?`,
-      [name, amount, type, category, day_of_month, month, year, id]);
+    // Validate required fields
+    if (!id || !name || !amount || !type || !category || !due_date) {
+      throw new Error('Missing required fields for budget item');
+    }
+    
+    db.run(`
+      UPDATE monthly_budget 
+      SET name = ?, amount = ?, type = ?, category = ?, due_date = ?, is_recurring = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      name, 
+      amount, 
+      type, 
+      category, 
+      due_date,
+      is_recurring !== undefined ? is_recurring : 1,
+      id
+    ]);
     
     saveDatabase();
-    console.log(`✓ Updated budget item: ${name} (ID: ${id})`);
+    console.log(`✓ Updated budget item: ${name} (ID: ${id}) - Due: ${due_date}`);
     return budgetItem;
   } catch (error) {
     console.error('✗ Error updating budget item:', error);
@@ -601,8 +782,8 @@ const getBudgetComparison = () => {
     }
 
     const now = new Date();
-    const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0');
-    const currentYear = now.getFullYear().toString();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
     
     const results = [];
     const res = db.exec(`
@@ -612,14 +793,17 @@ const getBudgetComparison = () => {
         b.amount as budgeted,
         b.type,
         b.category,
+        b.due_date,
+        b.is_recurring,
         COALESCE(SUM(ABS(t.amount)), 0) as actual
       FROM monthly_budget b
       LEFT JOIN transactions t ON t.category = b.category 
         AND t.type = b.type
-        AND strftime('%m', t.date) = '${currentMonth}'
-        AND strftime('%Y', t.date) = '${currentYear}'
+        AND strftime('%Y', t.date) = strftime('%Y', b.due_date)
+        AND strftime('%m', t.date) = strftime('%m', b.due_date)
       WHERE b.is_active = 1
-      GROUP BY b.id, b.name, b.amount, b.type, b.category
+      GROUP BY b.id, b.name, b.amount, b.type, b.category, b.due_date, b.is_recurring
+      ORDER BY b.due_date, b.type, b.name
     `);
     
     if (res.length > 0) {

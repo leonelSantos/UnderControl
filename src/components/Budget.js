@@ -26,7 +26,9 @@ import {
   LinearProgress,
   Chip,
   Tabs,
-  Tab
+  Tab,
+  Switch,
+  Tooltip
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -37,7 +39,10 @@ import {
   Assessment as RatioIcon,
   NavigateBefore as PrevIcon,
   NavigateNext as NextIcon,
-  Compare as CompareIcon
+  Compare as CompareIcon,
+  Event as EventIcon,
+  Repeat as RepeatIcon,
+  EventRepeat as EventRepeatIcon
 } from '@mui/icons-material';
 import { Line, Bar } from 'react-chartjs-2';
 import {
@@ -48,7 +53,7 @@ import {
   LineElement,
   BarElement,
   Title,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend
 } from 'chart.js';
 import { useData } from '../context/DataContext';
@@ -61,27 +66,36 @@ ChartJS.register(
   LineElement,
   BarElement,
   Title,
-  Tooltip,
+  ChartTooltip,
   Legend
 );
 
 const categories = [
-  { value: 'salary', label: 'Salary' },
-  { value: 'freelance', label: 'Freelance' },
-  { value: 'investment', label: 'Investment Income' },
-  { value: 'other_income', label: 'Other Income' },
-  { value: 'housing', label: 'Housing/Rent' },
-  { value: 'utilities', label: 'Utilities' },
-  { value: 'food', label: 'Food & Dining' },
-  { value: 'transport', label: 'Transportation' },
-  { value: 'entertainment', label: 'Entertainment' },
-  { value: 'shopping', label: 'Shopping' },
-  { value: 'healthcare', label: 'Healthcare' },
-  { value: 'education', label: 'Education' },
-  { value: 'insurance', label: 'Insurance' },
-  { value: 'debt_payment', label: 'Debt Payments' },
-  { value: 'savings', label: 'Savings' },
-  { value: 'other_expense', label: 'Other Expenses' }
+  // Income categories
+  { value: 'salary', label: 'Salary', type: 'income' },
+  { value: 'freelance', label: 'Freelance', type: 'income' },
+  { value: 'investment_income', label: 'Investment Income', type: 'income' },
+  { value: 'rental_income', label: 'Rental Income', type: 'income' },
+  { value: 'business_income', label: 'Business Income', type: 'income' },
+  { value: 'other_income', label: 'Other Income', type: 'income' },
+  
+  // Expense categories
+  { value: 'housing', label: 'Housing/Rent', type: 'expense' },
+  { value: 'utilities', label: 'Utilities', type: 'expense' },
+  { value: 'food', label: 'Food & Dining', type: 'expense' },
+  { value: 'transportation', label: 'Transportation', type: 'expense' },
+  { value: 'entertainment', label: 'Entertainment', type: 'expense' },
+  { value: 'shopping', label: 'Shopping', type: 'expense' },
+  { value: 'healthcare', label: 'Healthcare', type: 'expense' },
+  { value: 'education', label: 'Education', type: 'expense' },
+  { value: 'insurance', label: 'Insurance', type: 'expense' },
+  { value: 'debt_payments', label: 'Debt Payments', type: 'expense' },
+  { value: 'savings_transfer', label: 'Savings Transfer', type: 'expense' },
+  { value: 'subscriptions', label: 'Subscriptions', type: 'expense' },
+  { value: 'personal_care', label: 'Personal Care', type: 'expense' },
+  { value: 'gifts_donations', label: 'Gifts & Donations', type: 'expense' },
+  { value: 'taxes', label: 'Taxes', type: 'expense' },
+  { value: 'other_expense', label: 'Other Expenses', type: 'expense' }
 ];
 
 const StatCard = ({ title, amount, type, icon, onClick }) => (
@@ -118,7 +132,38 @@ const StatCard = ({ title, amount, type, icon, onClick }) => (
 
 const BudgetItemCard = ({ item, onEdit, onDelete, currentMonth, currentYear }) => {
   const categoryLabel = categories.find(cat => cat.value === item.category)?.label || item.category;
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  // Parse the due date safely without timezone issues
+  const getDueDateInfo = (item) => {
+    if (item.due_date || item.calculated_due_date) {
+      const dateString = item.due_date || item.calculated_due_date;
+      // Parse the date as local date to avoid timezone shift
+      const [year, month, day] = dateString.split('-').map(Number);
+      const dueDate = new Date(year, month - 1, day); // month is 0-indexed in JS
+      
+      return {
+        fullDate: dueDate.toLocaleDateString(),
+        monthYear: dueDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        day: dueDate.getDate(),
+        isCurrentMonth: dueDate.getMonth() + 1 === currentMonth && dueDate.getFullYear() === currentYear
+      };
+    }
+    
+    // Fallback to legacy format
+    const day = item.day_of_month || 1;
+    const month = item.month || currentMonth;
+    const year = item.year || currentYear;
+    const date = new Date(year, month - 1, day); // month is 0-indexed
+    
+    return {
+      fullDate: date.toLocaleDateString(),
+      monthYear: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      day: day,
+      isCurrentMonth: month === currentMonth && year === currentYear
+    };
+  };
+  
+  const dueDateInfo = getDueDateInfo(item);
   
   return (
     <Card elevation={1} sx={{ mb: 2 }}>
@@ -129,17 +174,22 @@ const BudgetItemCard = ({ item, onEdit, onDelete, currentMonth, currentYear }) =
               <Typography variant="h6">
                 {item.name}
               </Typography>
-              {item.month && item.year && (item.month !== currentMonth || item.year !== currentYear) && (
+              {item.is_recurring && Boolean(item.is_recurring) && (
+                <Tooltip title="Recurring item">
+                  <RepeatIcon color="primary" fontSize="small" />
+                </Tooltip>
+              )}
+              {!dueDateInfo.isCurrentMonth && (
                 <Chip 
                   size="small" 
-                  label={`${monthNames[item.month - 1]} ${item.year}`}
+                  label={dueDateInfo.monthYear}
                   variant="outlined"
                   color="secondary"
                 />
               )}
             </Box>
             <Typography variant="body2" color="textSecondary" gutterBottom>
-              {categoryLabel} • Due on day {item.day_of_month}
+              {categoryLabel} • Due: {dueDateInfo.fullDate}
             </Typography>
             <Typography 
               variant="h5" 
@@ -199,9 +249,8 @@ const Budget = () => {
     amount: '',
     type: 'expense',
     category: '',
-    day_of_month: 1,
-    month: new Date().getMonth() + 1,
-    year: new Date().getFullYear()
+    due_date: new Date().toISOString().split('T')[0], // Default to today
+    is_recurring: true
   });
 
   // Generate month options
@@ -231,12 +280,21 @@ const Budget = () => {
   const budgetSummary = useMemo(() => {
     // Filter budget items for selected month/year
     const filteredBudget = monthlyBudget.filter(item => {
-      // If item has month/year properties, filter by them
+      // Check by due_date first
+      if (item.due_date || item.calculated_due_date) {
+        const dateString = item.due_date || item.calculated_due_date;
+        // Parse as local date to avoid timezone issues
+        const [year, month, day] = dateString.split('-').map(Number);
+        return month === selectedMonth && year === selectedYear;
+      }
+      
+      // Fallback to legacy month/year properties
       if (item.month && item.year) {
         return item.month === selectedMonth && item.year === selectedYear;
       }
-      // Otherwise include all items (for backward compatibility)
-      return true;
+      
+      // For recurring items without specific month/year, include them
+      return item.is_recurring;
     });
 
     const incomeItems = filteredBudget.filter(item => item.type === 'income');
@@ -284,19 +342,29 @@ const Budget = () => {
   const monthlyComparison = useMemo(() => {
     const monthlyData = {};
     
-    // Group budget items by month/year
+    // Group budget items by month/year from due_date
     monthlyBudget.forEach(item => {
-      if (item.month && item.year) {
-        const key = `${item.year}-${String(item.month).padStart(2, '0')}`;
-        if (!monthlyData[key]) {
-          monthlyData[key] = { budgetIncome: 0, budgetExpenses: 0, actualIncome: 0, actualExpenses: 0 };
-        }
-        
-        if (item.type === 'income') {
-          monthlyData[key].budgetIncome += item.amount;
-        } else {
-          monthlyData[key].budgetExpenses += item.amount;
-        }
+      let monthKey;
+      
+      if (item.due_date || item.calculated_due_date) {
+        const dateString = item.due_date || item.calculated_due_date;
+        // Parse as local date to avoid timezone issues
+        const [year, month, day] = dateString.split('-').map(Number);
+        monthKey = `${year}-${String(month).padStart(2, '0')}`;
+      } else if (item.month && item.year) {
+        monthKey = `${item.year}-${String(item.month).padStart(2, '0')}`;
+      } else {
+        return; // Skip items without date info
+      }
+      
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = { budgetIncome: 0, budgetExpenses: 0, actualIncome: 0, actualExpenses: 0 };
+      }
+      
+      if (item.type === 'income') {
+        monthlyData[monthKey].budgetIncome += item.amount;
+      } else {
+        monthlyData[monthKey].budgetExpenses += item.amount;
       }
     });
 
@@ -384,12 +452,13 @@ const Budget = () => {
   const handleFormSubmit = async () => {
     try {
       const itemData = {
-        ...budgetForm,
+        id: editingItem ? editingItem.id : generateId(),
+        name: budgetForm.name,
         amount: parseFloat(budgetForm.amount),
-        day_of_month: parseInt(budgetForm.day_of_month),
-        month: parseInt(budgetForm.month),
-        year: parseInt(budgetForm.year),
-        id: editingItem ? editingItem.id : generateId()
+        type: budgetForm.type,
+        category: budgetForm.category,
+        due_date: budgetForm.due_date,
+        is_recurring: budgetForm.is_recurring
       };
 
       if (editingItem) {
@@ -400,15 +469,7 @@ const Budget = () => {
 
       setModalOpen(false);
       setEditingItem(null);
-      setBudgetForm({
-        name: '',
-        amount: '',
-        type: 'expense',
-        category: '',
-        day_of_month: 1,
-        month: selectedMonth,
-        year: selectedYear
-      });
+      resetForm();
     } catch (error) {
       alert('Failed to save budget item: ' + error.message);
     }
@@ -416,14 +477,35 @@ const Budget = () => {
 
   const handleEdit = (item) => {
     setEditingItem(item);
+    
+    // Extract due_date from item
+    let dueDate = item.due_date || item.calculated_due_date;
+    if (!dueDate && item.month && item.year && item.day_of_month) {
+      dueDate = `${item.year}-${String(item.month).padStart(2, '0')}-${String(item.day_of_month).padStart(2, '0')}`;
+    }
+    if (!dueDate) {
+      dueDate = new Date().toISOString().split('T')[0];
+    }
+    
+    // Ensure the date is in the correct format (YYYY-MM-DD)
+    if (dueDate && !dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      // If it's not in the right format, try to parse and reformat
+      const parsedDate = new Date(dueDate);
+      if (!isNaN(parsedDate.getTime())) {
+        const year = parsedDate.getFullYear();
+        const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(parsedDate.getDate()).padStart(2, '0');
+        dueDate = `${year}-${month}-${day}`;
+      }
+    }
+    
     setBudgetForm({
       name: item.name,
       amount: item.amount.toString(),
       type: item.type,
       category: item.category,
-      day_of_month: item.day_of_month,
-      month: item.month || selectedMonth,
-      year: item.year || selectedYear
+      due_date: dueDate,
+      is_recurring: Boolean(item.is_recurring) // Convert to boolean
     });
     setModalOpen(true);
   };
@@ -440,16 +522,19 @@ const Budget = () => {
 
   const openAddModal = (type = 'expense') => {
     setEditingItem(null);
+    resetForm(type);
+    setModalOpen(true);
+  };
+
+  const resetForm = (type = 'expense') => {
     setBudgetForm({
       name: '',
       amount: '',
       type,
       category: '',
-      day_of_month: 1,
-      month: selectedMonth,
-      year: selectedYear
+      due_date: new Date().toISOString().split('T')[0],
+      is_recurring: true
     });
-    setModalOpen(true);
   };
 
   const navigateMonth = (direction) => {
@@ -761,9 +846,18 @@ const Budget = () => {
         </Typography>
         <Grid container spacing={3}>
           {monthOptions.map((month) => {
-            const monthBudget = monthlyBudget.filter(item => 
-              item.month === month.value && item.year === currentYear
-            );
+            // Calculate budget for each month from due_dates
+            const monthBudget = monthlyBudget.filter(item => {
+              if (item.due_date || item.calculated_due_date) {
+                const dateString = item.due_date || item.calculated_due_date;
+                // Parse as local date to avoid timezone issues
+                const [year, month, day] = dateString.split('-').map(Number);
+                return month === month.value && year === currentYear;
+              }
+              // Fallback to legacy month/year
+              return item.month === month.value && item.year === currentYear;
+            });
+            
             const income = monthBudget.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
             const expenses = monthBudget.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
             const net = income - expenses;
@@ -812,10 +906,14 @@ const Budget = () => {
       {/* Add/Edit Budget Item Modal */}
       <Dialog open={modalOpen} onClose={() => setModalOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
-          {editingItem ? 'Edit' : 'Add'} Budget Item
+          <Box display="flex" alignItems="center" gap={1}>
+            <EventIcon />
+            {editingItem ? 'Edit' : 'Add'} Budget Item
+          </Box>
         </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
+            {/* Type Selection */}
             <Grid item xs={12}>
               <FormControl>
                 <FormLabel>Type</FormLabel>
@@ -824,11 +922,31 @@ const Budget = () => {
                   value={budgetForm.type}
                   onChange={(e) => setBudgetForm({ ...budgetForm, type: e.target.value })}
                 >
-                  <FormControlLabel value="income" control={<Radio />} label="Income" />
-                  <FormControlLabel value="expense" control={<Radio />} label="Expense" />
+                  <FormControlLabel 
+                    value="income" 
+                    control={<Radio />} 
+                    label={
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <IncomeIcon color="success" fontSize="small" />
+                        Income
+                      </Box>
+                    }
+                  />
+                  <FormControlLabel 
+                    value="expense" 
+                    control={<Radio />} 
+                    label={
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <ExpenseIcon color="error" fontSize="small" />
+                        Expense
+                      </Box>
+                    }
+                  />
                 </RadioGroup>
               </FormControl>
             </Grid>
+
+            {/* Name/Description */}
             <Grid item xs={12}>
               <TextField
                 label="Name/Description"
@@ -837,8 +955,11 @@ const Budget = () => {
                 fullWidth
                 required
                 placeholder="e.g., Monthly Salary, Rent, Groceries"
+                helperText="Give this budget item a descriptive name"
               />
             </Grid>
+
+            {/* Amount and Due Date */}
             <Grid item xs={12} sm={6}>
               <TextField
                 label="Amount"
@@ -848,51 +969,23 @@ const Budget = () => {
                 fullWidth
                 required
                 inputProps={{ min: 0, step: 0.01 }}
+                helperText="Monthly amount"
               />
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
-                label="Day of Month"
-                type="number"
-                value={budgetForm.day_of_month}
-                onChange={(e) => setBudgetForm({ ...budgetForm, day_of_month: e.target.value })}
+                label="Due Date"
+                type="date"
+                value={budgetForm.due_date}
+                onChange={(e) => setBudgetForm({ ...budgetForm, due_date: e.target.value })}
                 fullWidth
-                inputProps={{ min: 1, max: 31 }}
-                helperText="When do you receive/pay this?"
+                required
+                InputLabelProps={{ shrink: true }}
+                helperText="When is this due/received?"
               />
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth required>
-                <InputLabel>Month</InputLabel>
-                <Select
-                  value={budgetForm.month}
-                  onChange={(e) => setBudgetForm({ ...budgetForm, month: e.target.value })}
-                  label="Month"
-                >
-                  {monthOptions.map((month) => (
-                    <MenuItem key={month.value} value={month.value}>
-                      {month.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth required>
-                <InputLabel>Year</InputLabel>
-                <Select
-                  value={budgetForm.year}
-                  onChange={(e) => setBudgetForm({ ...budgetForm, year: e.target.value })}
-                  label="Year"
-                >
-                  {yearOptions.map((year) => (
-                    <MenuItem key={year.value} value={year.value}>
-                      {year.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
+
+            {/* Category */}
             <Grid item xs={12}>
               <FormControl fullWidth required>
                 <InputLabel>Category</InputLabel>
@@ -904,23 +997,67 @@ const Budget = () => {
                   {categories
                     .filter(cat => 
                       budgetForm.type === 'income' 
-                        ? ['salary', 'freelance', 'investment', 'other_income'].includes(cat.value)
-                        : !['salary', 'freelance', 'investment', 'other_income'].includes(cat.value)
+                        ? cat.type === 'income'
+                        : cat.type === 'expense'
                     )
                     .map((category) => (
-                      <MenuItem key={category.value} value={category.value}>
+                      <MenuItem key={`category-${category.value}`} value={category.value}>
                         {category.label}
                       </MenuItem>
                     ))}
                 </Select>
               </FormControl>
             </Grid>
+
+            {/* Recurring Toggle */}
+            <Grid item xs={12}>
+              <Paper elevation={1} sx={{ p: 2, bgcolor: 'grey.50' }}>
+                <Box display="flex" alignItems="center" justifyContent="space-between">
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <RepeatIcon color={Boolean(budgetForm.is_recurring) ? 'primary' : 'disabled'} />
+                    <Box>
+                      <Typography variant="body1" fontWeight="medium">
+                        Recurring Item
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        {Boolean(budgetForm.is_recurring)
+                          ? 'This item repeats every month' 
+                          : 'This is a one-time budget item'
+                        }
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Switch
+                    checked={Boolean(budgetForm.is_recurring)}
+                    onChange={(e) => setBudgetForm({ ...budgetForm, is_recurring: e.target.checked })}
+                    color="primary"
+                  />
+                </Box>
+              </Paper>
+            </Grid>
+
+            {/* Helpful Tips */}
+            <Grid item xs={12}>
+              <Alert severity="info" sx={{ mt: 1 }}>
+                <Typography variant="body2">
+                  <strong>Tips:</strong>
+                  <br />• Use recurring items for monthly expenses like rent, salary, utilities
+                  <br />• Use one-time items for special occasions or irregular expenses
+                  <br />• The due date helps track when money comes in or goes out
+                </Typography>
+              </Alert>
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setModalOpen(false)}>Cancel</Button>
-          <Button onClick={handleFormSubmit} variant="contained">
-            {editingItem ? 'Update' : 'Add'}
+          <Button 
+            onClick={handleFormSubmit} 
+            variant="contained"
+            disabled={!budgetForm.name || !budgetForm.amount || !budgetForm.category || !budgetForm.due_date}
+            startIcon={editingItem ? <EditIcon /> : <AddIcon />}
+          >
+            {editingItem ? 'Update' : 'Add'} Budget Item
           </Button>
         </DialogActions>
       </Dialog>
