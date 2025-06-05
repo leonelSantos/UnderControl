@@ -1,4 +1,8 @@
+// src/App.js - Updated with Chart.js configuration
 import React, { useState, useEffect } from 'react';
+
+// Import Chart.js configuration FIRST - This is critical!
+import './utils/chartConfig';
 import {
   Box,
   AppBar,

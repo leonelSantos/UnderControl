@@ -45,30 +45,9 @@ import {
   EventRepeat as EventRepeatIcon
 } from '@mui/icons-material';
 import { Line, Bar } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip as ChartTooltip,
-  Legend
-} from 'chart.js';
+import { ChartJS, barOptions } from '../utils/chartConfig';
 import { useData } from '../context/DataContext';
 
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  ChartTooltip,
-  Legend
-);
 
 const categories = [
   // Income categories
@@ -582,29 +561,29 @@ const DebugDataDisplay = () => {
   );
 };
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top',
-      },
-      title: {
-        display: true,
-        text: 'Budget vs Actual - 6 Month Comparison'
-      }
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      position: 'top',
     },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          callback: function(value) {
-            return '$' + value.toLocaleString();
-          }
+    title: {
+      display: true,
+      text: 'Budget vs Actual - 6 Month Comparison'
+    }
+  },
+  scales: {
+    y: {
+      beginAtZero: true,
+      ticks: {
+        callback: function(value) {
+          return '$' + value.toLocaleString();
         }
       }
     }
-  };
+  }
+};
 
   const handleFormSubmit = async () => {
     try {
