@@ -20,7 +20,6 @@ import {
 
 // Import your components
 import Dashboard from './components/Dashboard';
-import Accounts from './components/Accounts';
 import Budget from './components/Budget';
 import SavingsGoals from './components/SavingsGoals';
 import Analytics from './components/Analytics';
@@ -55,7 +54,6 @@ function App() {
 
   const tabs = [
     { label: 'Dashboard', icon: <DashboardIcon />, component: Dashboard },
-    { label: 'Accounts', icon: <AccountIcon />, component: Accounts },
     { label: 'Budget', icon: <BudgetIcon />, component: Budget },
     { label: 'Savings', icon: <SavingsIcon />, component: SavingsGoals },
     { label: 'Analytics', icon: <AnalyticsIcon />, component: Analytics },

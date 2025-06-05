@@ -338,92 +338,249 @@ const Budget = () => {
     };
   }, [transactions, selectedMonth, selectedYear]);
 
+  
   // Calculate multi-month comparison data
-  const monthlyComparison = useMemo(() => {
-    const monthlyData = {};
+const monthlyComparison = useMemo(() => {
+  const monthlyData = {};
+  
+  // Group budget items by month/year from due_date
+  monthlyBudget.forEach(item => {
+    let monthKey;
     
-    // Group budget items by month/year from due_date
-    monthlyBudget.forEach(item => {
+    if (item.due_date || item.calculated_due_date) {
+      const dateString = item.due_date || item.calculated_due_date;
+      try {
+        // Handle different date formats more robustly
+        let parsedDate;
+        
+        if (dateString.includes('-')) {
+          // Format: YYYY-MM-DD or YYYY-MM or MM-DD-YYYY
+          const parts = dateString.split('-');
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              // YYYY-MM-DD format
+              parsedDate = new Date(parts[0], parseInt(parts[1]) - 1, parseInt(parts[2]));
+            } else {
+              // MM-DD-YYYY format
+              parsedDate = new Date(parts[2], parseInt(parts[0]) - 1, parseInt(parts[1]));
+            }
+          } else if (parts.length === 2 && parts[0].length === 4) {
+            // YYYY-MM format
+            parsedDate = new Date(parts[0], parseInt(parts[1]) - 1, 1);
+          }
+        } else {
+          // Try to parse as-is
+          parsedDate = new Date(dateString);
+        }
+        
+        if (!isNaN(parsedDate.getTime())) {
+          const year = parsedDate.getFullYear();
+          const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+          monthKey = `${year}-${month}`;
+        } else {
+          console.warn('Invalid date in budget item:', dateString, item);
+          return; // Skip this item
+        }
+      } catch (error) {
+        console.warn('Error parsing date in budget item:', dateString, error);
+        return; // Skip this item
+      }
+    } else if (item.month && item.year) {
+      // Legacy format
+      monthKey = `${item.year}-${String(item.month).padStart(2, '0')}`;
+    } else {
+      console.warn('Budget item missing date information:', item);
+      return; // Skip items without date info
+    }
+    
+    if (!monthlyData[monthKey]) {
+      monthlyData[monthKey] = { 
+        budgetIncome: 0, 
+        budgetExpenses: 0, 
+        actualIncome: 0, 
+        actualExpenses: 0 
+      };
+    }
+    
+    if (item.type === 'income') {
+      monthlyData[monthKey].budgetIncome += parseFloat(item.amount) || 0;
+    } else if (item.type === 'expense') {
+      monthlyData[monthKey].budgetExpenses += parseFloat(item.amount) || 0;
+    }
+  });
+
+  // Add actual spending from transactions
+  transactions.forEach(transaction => {
+    if (!transaction.date) {
+      console.warn('Transaction missing date:', transaction);
+      return;
+    }
+    
+    try {
+      // Extract month key from transaction date
       let monthKey;
       
-      if (item.due_date || item.calculated_due_date) {
-        const dateString = item.due_date || item.calculated_due_date;
-        // Parse as local date to avoid timezone issues
-        const [year, month, day] = dateString.split('-').map(Number);
-        monthKey = `${year}-${String(month).padStart(2, '0')}`;
-      } else if (item.month && item.year) {
-        monthKey = `${item.year}-${String(item.month).padStart(2, '0')}`;
+      if (transaction.date.includes('-')) {
+        // Handle YYYY-MM-DD format (most common)
+        const dateParts = transaction.date.split('-');
+        if (dateParts.length >= 2) {
+          if (dateParts[0].length === 4) {
+            // YYYY-MM-DD format
+            monthKey = `${dateParts[0]}-${dateParts[1]}`;
+          } else {
+            // MM-DD-YYYY format
+            monthKey = `${dateParts[2]}-${dateParts[0]}`;
+          }
+        }
       } else {
-        return; // Skip items without date info
+        // Try to parse as Date object
+        const parsedDate = new Date(transaction.date);
+        if (!isNaN(parsedDate.getTime())) {
+          const year = parsedDate.getFullYear();
+          const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+          monthKey = `${year}-${month}`;
+        }
+      }
+      
+      if (!monthKey) {
+        console.warn('Could not parse transaction date:', transaction.date);
+        return;
       }
       
       if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { budgetIncome: 0, budgetExpenses: 0, actualIncome: 0, actualExpenses: 0 };
+        monthlyData[monthKey] = { 
+          budgetIncome: 0, 
+          budgetExpenses: 0, 
+          actualIncome: 0, 
+          actualExpenses: 0 
+        };
       }
       
-      if (item.type === 'income') {
-        monthlyData[monthKey].budgetIncome += item.amount;
-      } else {
-        monthlyData[monthKey].budgetExpenses += item.amount;
-      }
-    });
-
-    // Add actual spending from transactions
-    transactions.forEach(transaction => {
-      const monthKey = transaction.date.substring(0, 7); // YYYY-MM
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { budgetIncome: 0, budgetExpenses: 0, actualIncome: 0, actualExpenses: 0 };
-      }
+      const amount = parseFloat(transaction.amount) || 0;
       
       if (transaction.type === 'income') {
-        monthlyData[monthKey].actualIncome += transaction.amount;
-      } else {
-        monthlyData[monthKey].actualExpenses += transaction.amount;
+        monthlyData[monthKey].actualIncome += amount;
+      } else if (transaction.type === 'expense') {
+        monthlyData[monthKey].actualExpenses += amount;
       }
-    });
+    } catch (error) {
+      console.warn('Error processing transaction date:', transaction.date, error);
+    }
+  });
 
-    // Convert to sorted array for chart
-    const sortedMonths = Object.keys(monthlyData).sort();
-    const last6Months = sortedMonths.slice(-6);
-    
-    return {
-      labels: last6Months.map(month => {
+  // Convert to sorted array for chart
+  const sortedMonths = Object.keys(monthlyData)
+    .filter(month => month.match(/^\d{4}-\d{2}$/)) // Ensure proper format
+    .sort();
+  
+  // Get last 6 months that have data, or current and previous 5 months
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  
+  // Generate last 6 months including current month
+  const last6MonthKeys = [];
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    last6MonthKeys.push(key);
+  }
+  
+  // Use last 6 months from data if available, otherwise use generated months
+  const monthsToShow = sortedMonths.length > 0 ? 
+    (sortedMonths.length >= 6 ? sortedMonths.slice(-6) : sortedMonths) : 
+    last6MonthKeys;
+  
+  console.log('Monthly comparison data:', {
+    monthlyData,
+    sortedMonths,
+    monthsToShow,
+    budgetItemsCount: monthlyBudget.length,
+    transactionsCount: transactions.length
+  });
+  
+  return {
+    labels: monthsToShow.map(month => {
+      try {
         const [year, monthNum] = month.split('-');
-        const date = new Date(year, parseInt(monthNum) - 1);
+        const date = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
         return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-      }),
-      datasets: [
-        {
-          label: 'Budgeted Income',
-          data: last6Months.map(month => monthlyData[month]?.budgetIncome || 0),
-          backgroundColor: 'rgba(46, 204, 113, 0.6)',
-          borderColor: '#2ecc71',
-          borderWidth: 2
-        },
-        {
-          label: 'Actual Income',
-          data: last6Months.map(month => monthlyData[month]?.actualIncome || 0),
-          backgroundColor: 'rgba(46, 204, 113, 0.8)',
-          borderColor: '#27ae60',
-          borderWidth: 2
-        },
-        {
-          label: 'Budgeted Expenses',
-          data: last6Months.map(month => monthlyData[month]?.budgetExpenses || 0),
-          backgroundColor: 'rgba(231, 76, 60, 0.6)',
-          borderColor: '#e74c3c',
-          borderWidth: 2
-        },
-        {
-          label: 'Actual Expenses',
-          data: last6Months.map(month => monthlyData[month]?.actualExpenses || 0),
-          backgroundColor: 'rgba(231, 76, 60, 0.8)',
-          borderColor: '#c0392b',
-          borderWidth: 2
-        }
-      ]
-    };
-  }, [monthlyBudget, transactions]);
+      } catch (error) {
+        return month; // Fallback to raw month key
+      }
+    }),
+    datasets: [
+      {
+        label: 'Budgeted Income',
+        data: monthsToShow.map(month => monthlyData[month]?.budgetIncome || 0),
+        backgroundColor: 'rgba(46, 204, 113, 0.6)',
+        borderColor: '#2ecc71',
+        borderWidth: 2
+      },
+      {
+        label: 'Actual Income',
+        data: monthsToShow.map(month => monthlyData[month]?.actualIncome || 0),
+        backgroundColor: 'rgba(46, 204, 113, 0.8)',
+        borderColor: '#27ae60',
+        borderWidth: 2
+      },
+      {
+        label: 'Budgeted Expenses',
+        data: monthsToShow.map(month => monthlyData[month]?.budgetExpenses || 0),
+        backgroundColor: 'rgba(231, 76, 60, 0.6)',
+        borderColor: '#e74c3c',
+        borderWidth: 2
+      },
+      {
+        label: 'Actual Expenses',
+        data: monthsToShow.map(month => monthlyData[month]?.actualExpenses || 0),
+        backgroundColor: 'rgba(231, 76, 60, 0.8)',
+        borderColor: '#c0392b',
+        borderWidth: 2
+      }
+    ]
+  };
+}, [monthlyBudget, transactions]);
+
+// Debug component to help troubleshoot data issues
+const DebugDataDisplay = () => {
+  if (process.env.NODE_ENV !== 'development') return null;
+  
+  return (
+    <Paper elevation={1} sx={{ p: 2, mb: 2, bgcolor: 'grey.100' }}>
+      <Typography variant="h6" gutterBottom>Debug Info (Development Only)</Typography>
+      <Grid container spacing={2}>
+        <Grid item xs={6}>
+          <Typography variant="body2"><strong>Budget Items:</strong> {monthlyBudget.length}</Typography>
+          <Typography variant="body2"><strong>Transactions:</strong> {transactions.length}</Typography>
+          <Typography variant="body2"><strong>Selected Month:</strong> {selectedMonth}/{selectedYear}</Typography>
+        </Grid>
+        <Grid item xs={6}>
+          <Typography variant="body2"><strong>Budget Summary:</strong></Typography>
+          <Typography variant="body2">Income: ${budgetSummary.totalIncome.toFixed(2)}</Typography>
+          <Typography variant="body2">Expenses: ${budgetSummary.totalExpenses.toFixed(2)}</Typography>
+        </Grid>
+      </Grid>
+      
+      {monthlyBudget.length > 0 && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="body2"><strong>Sample Budget Item:</strong></Typography>
+          <pre style={{ fontSize: '10px', overflow: 'auto', maxHeight: '100px' }}>
+            {JSON.stringify(monthlyBudget[0], null, 2)}
+          </pre>
+        </Box>
+      )}
+      
+      {transactions.length > 0 && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="body2"><strong>Sample Transaction:</strong></Typography>
+          <pre style={{ fontSize: '10px', overflow: 'auto', maxHeight: '100px' }}>
+            {JSON.stringify(transactions[0], null, 2)}
+          </pre>
+        </Box>
+      )}
+    </Paper>
+  );
+};
 
   const chartOptions = {
     responsive: true,
