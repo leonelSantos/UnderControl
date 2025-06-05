@@ -128,7 +128,7 @@ const chartOptions = {
       {/* Recent Transactions */}
       <Paper elevation={2} sx={{ p: 3 }}>
         <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-          <Typography variant="h6">Recent Transactions</Typography>
+          <Typography variant="h5">Recent Transactions</Typography>
           <Button
             variant="contained"
             startIcon={<AddIcon />}

@@ -95,7 +95,7 @@ function App() {
       <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh' }}>
         <AppBar position="static" elevation={1}>
           <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            <Typography variant="h6" color ="#f2e9e6" component="div" sx={{ flexGrow: 1 }}>
               Personal Finance Tracker
             </Typography>
           </Toolbar>
