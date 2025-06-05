@@ -29,37 +29,62 @@ const OverviewTab = ({ financialSummary, transactions, availableAccounts, onAddT
   const chartRef = useRef(null);
 
   const chartData = useMemo(() => {
-    const { totalChecking, totalSavings, totalDebt } = financialSummary;
-    const totalAssets = totalChecking + totalSavings;
-    
-    if (totalAssets === 0 && totalDebt === 0) {
-      return null;
-    }
+  const { totalChecking, totalSavings, totalDebt } = financialSummary;
+  const totalAssets = totalChecking + totalSavings;
+  
+  if (totalAssets === 0 && totalDebt === 0) {
+    return null;
+  }
 
-    return {
-      labels: ['Assets', 'Debts'],
-      datasets: [{
-        data: [totalAssets, totalDebt],
-        backgroundColor: ['#2ecc71', '#e74c3c'],
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
-    };
-  }, [financialSummary]);
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'bottom',
-      },
-      title: {
-        display: true,
-        text: 'Assets vs Debts'
-      }
-    }
+  return {
+    labels: ['Assets', 'Debts'],
+    datasets: [{
+      data: [totalAssets, totalDebt],
+      backgroundColor: ['#689F38', '#D84315'], // Earthy green and burnt orange
+      borderWidth: 3,
+      borderColor: '#FFFFFF',
+      hoverBackgroundColor: ['#8BC34A', '#FF5722'],
+      hoverBorderColor: '#FFFFFF',
+    }]
   };
+}, [financialSummary]);
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  cutout: '60%',
+  plugins: {
+    legend: {
+      position: 'bottom',
+      labels: {
+        color: '#3E2723',
+        font: {
+          family: 'Roboto',
+          size: 12,
+        },
+        padding: 20,
+      },
+    },
+    title: {
+      display: true,
+      text: 'Assets vs Debts',
+      color: '#3E2723',
+      font: {
+        family: 'Roboto',
+        size: 16,
+        weight: 'bold',
+      },
+    },
+    tooltip: {
+      backgroundColor: 'rgba(62, 39, 35, 0.9)',
+      titleColor: '#FFFFFF',
+      bodyColor: '#FFFFFF',
+      borderColor: '#8D6E63',
+      borderWidth: 1,
+      cornerRadius: 8,
+    },
+  },
+};
 
   // Cleanup chart on unmount to prevent canvas reuse errors
   useEffect(() => {

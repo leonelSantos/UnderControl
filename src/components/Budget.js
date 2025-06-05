@@ -78,21 +78,36 @@ const categories = [
 ];
 
 const StatCard = ({ title, amount, type, icon, onClick }) => (
-  <Card elevation={2} sx={{ height: '100%' }}>
+  <Card 
+    elevation={3} 
+    sx={{ 
+      height: '100%',
+      background: type === 'income' 
+        ? 'linear-gradient(135deg, #689F38 0%, #8BC34A 100%)' 
+        : 'linear-gradient(135deg, #D84315 0%, #FF5722 100%)',
+      color: 'white',
+      borderRadius: '12px',
+      boxShadow: '0 4px 12px rgba(93, 64, 55, 0.2)',
+      '&:hover': {
+        boxShadow: '0 6px 20px rgba(93, 64, 55, 0.3)',
+        transform: 'translateY(-2px)',
+      },
+      transition: 'all 0.3s ease-in-out',
+    }}
+  >
     <CardContent>
       <Box display="flex" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography variant="h6" color="textSecondary">
+        <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
           {title}
         </Typography>
-        <Box color={type === 'income' ? 'success.main' : 'error.main'}>
+        <Box sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
           {icon}
         </Box>
       </Box>
       <Typography 
         variant="h4" 
         component="div" 
-        color={type === 'income' ? 'success.main' : 'error.main'}
-        sx={{ mb: 2 }}
+        sx={{ mb: 2, fontWeight: 'bold', color: 'white' }}
       >
         ${amount.toFixed(2)}
       </Typography>
@@ -102,6 +117,14 @@ const StatCard = ({ title, amount, type, icon, onClick }) => (
         startIcon={<AddIcon />}
         onClick={onClick}
         fullWidth
+        sx={{
+          color: 'white',
+          borderColor: 'rgba(255, 255, 255, 0.5)',
+          '&:hover': {
+            borderColor: 'white',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+          }
+        }}
       >
         Add {type === 'income' ? 'Income' : 'Expense'}
       </Button>
@@ -145,17 +168,28 @@ const BudgetItemCard = ({ item, onEdit, onDelete, currentMonth, currentYear }) =
   const dueDateInfo = getDueDateInfo(item);
   
   return (
-    <Card elevation={1} sx={{ mb: 2 }}>
+    <Card 
+      elevation={2} 
+      sx={{ 
+        mb: 2,
+        borderRadius: '12px',
+        borderLeft: `4px solid ${item.type === 'income' ? '#689F38' : '#D84315'}`,
+        '&:hover': {
+          boxShadow: '0 4px 12px rgba(93, 64, 55, 0.15)',
+        },
+        transition: 'box-shadow 0.3s ease-in-out',
+      }}
+    >
       <CardContent>
         <Box display="flex" justifyContent="space-between" alignItems="flex-start">
           <Box flex={1}>
             <Box display="flex" alignItems="center" gap={1} sx={{ mb: 1 }}>
-              <Typography variant="h6">
+              <Typography variant="h6" sx={{ color: '#3E2723' }}>
                 {item.name}
               </Typography>
               {item.is_recurring && Boolean(item.is_recurring) && (
                 <Tooltip title="Recurring item">
-                  <RepeatIcon color="primary" fontSize="small" />
+                  <RepeatIcon sx={{ color: '#8D6E63' }} fontSize="small" />
                 </Tooltip>
               )}
               {!dueDateInfo.isCurrentMonth && (
@@ -163,26 +197,45 @@ const BudgetItemCard = ({ item, onEdit, onDelete, currentMonth, currentYear }) =
                   size="small" 
                   label={dueDateInfo.monthYear}
                   variant="outlined"
-                  color="secondary"
+                  sx={{ 
+                    borderColor: '#8D6E63',
+                    color: '#8D6E63',
+                  }}
                 />
               )}
             </Box>
-            <Typography variant="body2" color="textSecondary" gutterBottom>
+            <Typography variant="body2" sx={{ color: '#5D4037', mb: 1 }}>
               {categoryLabel} • Due: {dueDateInfo.fullDate}
             </Typography>
             <Typography 
               variant="h5" 
-              color={item.type === 'income' ? 'success.main' : 'error.main'}
-              fontWeight="bold"
+              sx={{
+                color: item.type === 'income' ? '#689F38' : '#D84315',
+                fontWeight: 'bold',
+              }}
             >
               ${item.amount.toFixed(2)}
             </Typography>
           </Box>
           <Box display="flex" gap={1}>
-            <IconButton size="small" onClick={() => onEdit(item)}>
+            <IconButton 
+              size="small" 
+              onClick={() => onEdit(item)}
+              sx={{ 
+                color: '#8D6E63',
+                '&:hover': { backgroundColor: 'rgba(141, 110, 99, 0.1)' }
+              }}
+            >
               <EditIcon />
             </IconButton>
-            <IconButton size="small" onClick={() => onDelete(item.id)} color="error">
+            <IconButton 
+              size="small" 
+              onClick={() => onDelete(item.id)} 
+              sx={{ 
+                color: '#D84315',
+                '&:hover': { backgroundColor: 'rgba(216, 67, 21, 0.1)' }
+              }}
+            >
               <DeleteIcon />
             </IconButton>
           </Box>
@@ -487,38 +540,43 @@ const monthlyComparison = useMemo(() => {
         return month; // Fallback to raw month key
       }
     }),
-    datasets: [
+   datasets: [
       {
         label: 'Budgeted Income',
         data: monthsToShow.map(month => monthlyData[month]?.budgetIncome || 0),
-        backgroundColor: 'rgba(46, 204, 113, 0.6)',
-        borderColor: '#2ecc71',
-        borderWidth: 2
+        backgroundColor: 'rgba(104, 159, 56, 0.7)', // Earthy green with transparency
+        borderColor: '#689F38', // Earthy green
+        borderWidth: 2,
+        borderRadius: 4,
       },
       {
         label: 'Actual Income',
         data: monthsToShow.map(month => monthlyData[month]?.actualIncome || 0),
-        backgroundColor: 'rgba(46, 204, 113, 0.8)',
-        borderColor: '#27ae60',
-        borderWidth: 2
+        backgroundColor: 'rgba(139, 195, 74, 0.8)', // Light green with transparency
+        borderColor: '#8BC34A', // Light green
+        borderWidth: 2,
+        borderRadius: 4,
       },
       {
         label: 'Budgeted Expenses',
         data: monthsToShow.map(month => monthlyData[month]?.budgetExpenses || 0),
-        backgroundColor: 'rgba(231, 76, 60, 0.6)',
-        borderColor: '#e74c3c',
-        borderWidth: 2
+        backgroundColor: 'rgba(216, 67, 21, 0.7)', // Burnt orange with transparency
+        borderColor: '#D84315', // Burnt orange
+        borderWidth: 2,
+        borderRadius: 4,
       },
       {
         label: 'Actual Expenses',
         data: monthsToShow.map(month => monthlyData[month]?.actualExpenses || 0),
-        backgroundColor: 'rgba(231, 76, 60, 0.8)',
-        borderColor: '#c0392b',
-        borderWidth: 2
+        backgroundColor: 'rgba(255, 87, 34, 0.8)', // Orange red with transparency
+        borderColor: '#FF5722', // Orange red
+        borderWidth: 2,
+        borderRadius: 4,
       }
     ]
   };
 }, [monthlyBudget, transactions]);
+
 
 // Debug component to help troubleshoot data issues
 const DebugDataDisplay = () => {
@@ -567,16 +625,49 @@ const chartOptions = {
   plugins: {
     legend: {
       position: 'top',
+      labels: {
+        color: '#3E2723', // Dark brown text
+        font: {
+          family: 'Roboto',
+          size: 12,
+        },
+      },
     },
     title: {
       display: true,
-      text: 'Budget vs Actual - 6 Month Comparison'
-    }
+      text: 'Budget vs Actual - 6 Month Comparison',
+      color: '#3E2723', // Dark brown text
+      font: {
+        family: 'Roboto',
+        size: 16,
+        weight: 'bold',
+      },
+    },
+    tooltip: {
+      backgroundColor: 'rgba(62, 39, 35, 0.9)',
+      titleColor: '#FFFFFF',
+      bodyColor: '#FFFFFF',
+      borderColor: '#8D6E63',
+      borderWidth: 1,
+      cornerRadius: 8,
+    },
   },
   scales: {
+    x: {
+      grid: {
+        color: 'rgba(188, 170, 164, 0.3)',
+      },
+      ticks: {
+        color: '#3E2723',
+      },
+    },
     y: {
       beginAtZero: true,
+      grid: {
+        color: 'rgba(188, 170, 164, 0.3)',
+      },
       ticks: {
+        color: '#3E2723',
         callback: function(value) {
           return '$' + value.toLocaleString();
         }

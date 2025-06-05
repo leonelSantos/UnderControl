@@ -10,21 +10,34 @@ import {
 
 const StatCard = ({ title, value, icon, color = 'primary', onClick }) => (
   <Card 
-    elevation={2} 
-    sx={{ cursor: onClick ? 'pointer' : 'default' }}
+    elevation={3} 
+    sx={{ 
+      cursor: onClick ? 'pointer' : 'default',
+      borderRadius: '12px',
+      background: color === 'error' 
+        ? 'linear-gradient(135deg, #D84315 0%, #FF5722 100%)'
+        : 'linear-gradient(135deg, #8D6E63 0%, #BCAAA4 100%)',
+      color: 'white',
+      boxShadow: '0 4px 12px rgba(93, 64, 55, 0.2)',
+      '&:hover': {
+        boxShadow: '0 6px 20px rgba(93, 64, 55, 0.3)',
+        transform: 'translateY(-2px)',
+      },
+      transition: 'all 0.3s ease-in-out',
+    }}
     onClick={onClick}
   >
     <CardContent>
       <Box display="flex" alignItems="center" justifyContent="space-between">
         <Box>
-          <Typography variant="h6" color="textSecondary" gutterBottom>
+          <Typography variant="h6" sx={{ color: 'rgba(255, 255, 255, 0.9)' }} gutterBottom>
             {title}
           </Typography>
-          <Typography variant="h4" component="div" color={color === 'error' ? 'error' : 'primary'}>
+          <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', color: 'white' }}>
             ${Math.abs(value).toFixed(2)}
           </Typography>
         </Box>
-        <Box color={color === 'error' ? 'error.main' : 'primary.main'}>
+        <Box sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
           {icon}
         </Box>
       </Box>

@@ -216,18 +216,34 @@ const TransactionsTab = ({
   return (
     <>
       <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
-        <Typography variant="h5">All Transactions</Typography>
+        <Typography variant="h5" sx={{ color: '#3E2723' }}>All Transactions</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
           onClick={onAddTransaction}
+          sx={{
+            background: 'linear-gradient(135deg, #8D6E63 0%, #6D4C41 100%)',
+            borderRadius: '8px',
+            '&:hover': {
+              background: 'linear-gradient(135deg, #6D4C41 0%, #5D4037 100%)',
+            },
+          }}
         >
           Add Transaction
         </Button>
       </Box>
 
       {/* Filters Section */}
-      <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+      <Paper 
+        elevation={3} 
+        sx={{ 
+          p: 3, 
+          mb: 3,
+          borderRadius: '12px',
+          background: 'linear-gradient(135deg, #F5F5DC 0%, #FFFFFF 100%)',
+          border: '1px solid rgba(188, 170, 164, 0.3)',
+        }}
+      >
         <Box display="flex" alignItems="center" gap={2} sx={{ mb: 3 }}>
           <FilterIcon />
           <Typography variant="h6">Filters</Typography>
@@ -381,50 +397,65 @@ const TransactionsTab = ({
       {hasActiveFilters && (
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid item xs={12} md={3}>
-            <Card>
+            <Card sx={{ 
+              borderRadius: '8px',
+              borderLeft: '4px solid #8D6E63',
+            }}>
               <CardContent sx={{ py: 2 }}>
-                <Typography variant="body2" color="textSecondary">
+                <Typography variant="body2" sx={{ color: '#5D4037' }}>
                   Filtered Results
                 </Typography>
-                <Typography variant="h6">
+                <Typography variant="h6" sx={{ color: '#3E2723' }}>
                   {filteredSummary.total} transactions
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid item xs={12} md={3}>
-            <Card>
+            <Card sx={{ 
+              borderRadius: '8px',
+              borderLeft: '4px solid #689F38',
+            }}>
               <CardContent sx={{ py: 2 }}>
-                <Typography variant="body2" color="textSecondary">
+                <Typography variant="body2" sx={{ color: '#5D4037' }}>
                   Total Income
                 </Typography>
-                <Typography variant="h6" color="success.main">
+                <Typography variant="h6" sx={{ color: '#689F38', fontWeight: 'bold' }}>
                   ${filteredSummary.income.toFixed(2)}
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid item xs={12} md={3}>
-            <Card>
+            <Card sx={{ 
+              borderRadius: '8px',
+              borderLeft: '4px solid #D84315',
+            }}>
               <CardContent sx={{ py: 2 }}>
-                <Typography variant="body2" color="textSecondary">
+                <Typography variant="body2" sx={{ color: '#5D4037' }}>
                   Total Expenses
                 </Typography>
-                <Typography variant="h6" color="error.main">
+                <Typography variant="h6" sx={{ color: '#D84315', fontWeight: 'bold' }}>
                   ${filteredSummary.expenses.toFixed(2)}
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid item xs={12} md={3}>
-            <Card>
+            <Card sx={{ 
+              borderRadius: '8px',
+              borderLeft: `4px solid ${filteredSummary.net >= 0 ? '#689F38' : '#D84315'}`,
+            }}>
               <CardContent sx={{ py: 2 }}>
-                <Typography variant="body2" color="textSecondary">
+                <Typography variant="body2" sx={{ color: '#5D4037' }}>
                   Net Amount
                 </Typography>
                 <Typography 
                   variant="h6" 
-                  color={filteredSummary.net >= 0 ? 'success.main' : 'error.main'}
+                  sx={{ 
+                    color: filteredSummary.net >= 0 ? '#689F38' : '#D84315',
+                    fontWeight: 'bold',
+                  }}
                 >
                   ${filteredSummary.net.toFixed(2)}
                 </Typography>

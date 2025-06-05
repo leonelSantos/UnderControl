@@ -164,30 +164,59 @@ const AccountsTab = ({
             <Grid container spacing={3}>
               {financialSummary.debtAccounts.map((account) => (
                 <Grid item xs={12} md={6} lg={4} key={account.id}>
-                  <Card sx={{ borderLeft: '4px solid', borderLeftColor: 'error.main' }}>
+                  <Card sx={{ 
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #FFFFFF 0%, #F5F5DC 100%)',
+                    border: '2px solid #D84315',
+                    boxShadow: '0 4px 12px rgba(216, 67, 21, 0.1)',
+                    '&:hover': {
+                      boxShadow: '0 6px 20px rgba(216, 67, 21, 0.2)',
+                      transform: 'translateY(-2px)',
+                    },
+                    transition: 'all 0.3s ease-in-out',
+                    }}>
                     <CardContent>
                       <Box display="flex" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
                         <Box>
-                          <Typography variant="h6" gutterBottom>
+                          <Typography variant="h6" gutterBottom sx={{ color: '#3E2723' }}>
                             {account.account_name || 'Unnamed Account'}
                           </Typography>
                           <Chip
                             label={account.account_type === 'credit_card' ? 'Credit Card' : 'Student Loan'}
                             size="small"
                             variant="outlined"
+                            sx={{ 
+                              borderColor: '#D84315',
+                              color: '#D84315',
+                              backgroundColor: 'rgba(216, 67, 21, 0.1)',
+                            }}
                           />
                         </Box>
                         <Box>
-                          <IconButton size="small" onClick={() => onEditAccount(account)}>
+                          <IconButton 
+                            size="small" 
+                            onClick={() => onEdit(account)}
+                            sx={{ 
+                              color: '#8D6E63',
+                              '&:hover': { backgroundColor: 'rgba(141, 110, 99, 0.1)' }
+                            }}
+                          >
                             <EditIcon />
                           </IconButton>
-                          <IconButton size="small" onClick={() => onDeleteAccount(account.id)} color="error">
+                          <IconButton 
+                            size="small" 
+                            onClick={() => onDelete(account.id)} 
+                            sx={{ 
+                              color: '#D84315',
+                              '&:hover': { backgroundColor: 'rgba(216, 67, 21, 0.1)' }
+                            }}
+                          >
                             <DeleteIcon />
                           </IconButton>
                         </Box>
                       </Box>
                       
-                      <Typography variant="h4" color="error" sx={{ mb: 2 }}>
+                      <Typography variant="h4" sx={{ color: '#D84315', mb: 2, fontWeight: 'bold' }}>
                         ${Math.abs(account.calculatedBalance).toFixed(2)}
                       </Typography>
                       
