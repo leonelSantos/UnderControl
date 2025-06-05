@@ -11,6 +11,85 @@ let SQL = null;
 // Database file path
 const dbPath = path.join(app.getPath('userData'), 'finance.db');
 
+// Add this function to your database.js file and call it during initialization
+const cleanupImportedData = () => {
+  try {
+    console.log('🧹 Cleaning up imported CSV data...');
+    
+    // Fix null categories - set them to 'other'
+    const nullCategoryResult = db.exec(`
+      UPDATE transactions 
+      SET category = 'other' 
+      WHERE category IS NULL OR category = ''
+    `);
+    console.log('✓ Fixed null categories');
+    
+    // Fix non-standard account types
+    // Map your CSV account types to standard ones
+    const accountTypeMapping = {
+      'chase': 'checking',
+      'bank_of_america': 'checking',
+      'wells_fargo': 'checking',
+      'savings_account': 'savings',
+      'credit_card': 'credit_card',
+      'discover': 'credit_card',
+      'visa': 'credit_card',
+      'mastercard': 'credit_card'
+    };
+    
+    Object.entries(accountTypeMapping).forEach(([oldType, newType]) => {
+      db.run(`
+        UPDATE transactions 
+        SET account_type = ? 
+        WHERE account_type = ?
+      `, [newType, oldType]);
+    });
+    console.log('✓ Standardized account types');
+    
+    // Fix date formats - convert M/D/YYYY to YYYY-MM-DD
+    const dateFormatResult = db.exec(`
+      SELECT id, date FROM transactions 
+      WHERE date LIKE '%/%'
+    `);
+    
+    if (dateFormatResult.length > 0 && dateFormatResult[0].values.length > 0) {
+      console.log(`Fixing ${dateFormatResult[0].values.length} date formats...`);
+      
+      dateFormatResult[0].values.forEach(([id, dateStr]) => {
+        try {
+          // Parse M/D/YYYY format
+          const [month, day, year] = dateStr.split('/');
+          const standardDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          
+          db.run(`
+            UPDATE transactions 
+            SET date = ? 
+            WHERE id = ?
+          `, [standardDate, id]);
+        } catch (error) {
+          console.warn(`⚠ Could not fix date format for transaction ${id}: ${dateStr}`);
+        }
+      });
+      console.log('✓ Fixed date formats');
+    }
+    
+    // Ensure all transactions have valid amounts
+    db.run(`
+      UPDATE transactions 
+      SET amount = 0 
+      WHERE amount IS NULL OR amount = ''
+    `);
+    console.log('✓ Fixed null amounts');
+    
+    // Save the cleanup changes
+    saveDatabase();
+    console.log('✓ Data cleanup completed successfully');
+    
+  } catch (error) {
+    console.error('✗ Error during data cleanup:', error);
+  }
+};
+
 // Initialize database
 const initDatabase = async () => {
   try {
@@ -45,6 +124,8 @@ const initDatabase = async () => {
 
     // Create tables (this is safe to run even if tables exist)
     createTables();
+
+    cleanupImportedData();
     
     // Migrate existing data if needed
     migrateExistingData();
@@ -575,18 +656,91 @@ const addTransaction = (transaction) => {
       throw new Error('Database not initialized');
     }
 
-    const { id, date, description, amount, category, type, account_id, account_type } = transaction;
+    console.log('Adding transaction with data:', transaction);
+
+    // Destructure and validate the transaction data
+    const { 
+      id, 
+      date, 
+      description, 
+      amount, 
+      category, 
+      type, 
+      account_id, 
+      account_type,
+      tags,
+      notes
+    } = transaction;
+
+    // Validate required fields and provide defaults for optional ones
+    if (!id) {
+      throw new Error('Transaction ID is required');
+    }
+    if (!date) {
+      throw new Error('Transaction date is required');
+    }
+    if (!description || description.trim() === '') {
+      throw new Error('Transaction description is required');
+    }
+    if (amount === undefined || amount === null || isNaN(amount)) {
+      throw new Error('Transaction amount must be a valid number');
+    }
+    if (!type || (type !== 'income' && type !== 'expense')) {
+      throw new Error('Transaction type must be either "income" or "expense"');
+    }
+
+    // Provide default category if missing
+    const safeCategory = category || 'other';
+    
+    // Handle optional fields - convert null to NULL for database
+    const safeTags = tags || null;
+    const safeNotes = notes || null;
+    const safeAccountId = account_id || null;
+    const safeAccountType = account_type || null;
+
+    console.log('Processed transaction data:', {
+      id,
+      date,
+      description: description.substring(0, 50) + '...', // Truncate for logging
+      amount,
+      category: safeCategory,
+      type,
+      account_id: safeAccountId,
+      account_type: safeAccountType
+    });
     
     db.run(`
-      INSERT INTO transactions (id, date, description, amount, category, type, account_id, account_type) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, date, description, amount, category, type, account_id, account_type]);
+      INSERT INTO transactions (
+        id, 
+        date, 
+        description, 
+        amount, 
+        category, 
+        type, 
+        account_id, 
+        account_type,
+        tags,
+        notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id, 
+      date, 
+      description, 
+      amount, 
+      safeCategory, 
+      type, 
+      safeAccountId, 
+      safeAccountType,
+      safeTags,
+      safeNotes
+    ]);
     
     saveDatabase();
-    console.log('✓ Added transaction:', description, `(${type}: ${amount})`);
-    return { id, ...transaction };
+    console.log('✓ Added transaction:', description.substring(0, 30), `(${type}: $${amount})`);
+    return { id, ...transaction, category: safeCategory };
   } catch (error) {
     console.error('✗ Error adding transaction:', error);
+    console.error('Transaction data that failed:', JSON.stringify(transaction, null, 2));
     throw error;
   }
 };

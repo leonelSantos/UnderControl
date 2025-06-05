@@ -73,7 +73,13 @@ const categories = [
   { value: 'housing', label: 'Housing/Rent' },
   { value: 'salary', label: 'Salary' },
   { value: 'freelance', label: 'Freelance' },
-  { value: 'other', label: 'Other' }
+  { value: 'investment', label: 'Investment Income' },
+  { value: 'business', label: 'Business Income' },
+  { value: 'insurance', label: 'Insurance' },
+  { value: 'taxes', label: 'Taxes' },
+  { value: 'debt_payment', label: 'Debt Payment' },
+  { value: 'transfer', label: 'Account Transfer' },
+  { value: 'other', label: 'Other' } // Important: This should be the fallback category
 ];
 
 const StatCard = ({ title, value, icon, color = 'primary', onClick }) => (
@@ -265,27 +271,63 @@ const Dashboard = () => {
   }, [calculatedBalances]);
 
   // Transaction handlers
-  const handleTransactionSubmit = async () => {
-    try {
-      const transactionData = {
-        ...transactionForm,
-        amount: parseFloat(transactionForm.amount),
-        id: editingTransaction ? editingTransaction.id : generateId()
-      };
-
-      if (editingTransaction) {
-        await updateTransaction(transactionData);
-      } else {
-        await addTransaction(transactionData);
-      }
-
-      setTransactionModalOpen(false);
-      setEditingTransaction(null);
-      resetTransactionForm();
-    } catch (error) {
-      alert('Failed to save transaction: ' + error.message);
+const handleTransactionSubmit = async () => {
+  try {
+    // Validate form data before submitting
+    if (!transactionForm.description || transactionForm.description.trim() === '') {
+      alert('Please enter a transaction description');
+      return;
     }
-  };
+    
+    if (!transactionForm.amount || isNaN(parseFloat(transactionForm.amount))) {
+      alert('Please enter a valid amount');
+      return;
+    }
+    
+    if (!transactionForm.category || transactionForm.category.trim() === '') {
+      alert('Please select a category');
+      return;
+    }
+    
+    if (!transactionForm.type || (transactionForm.type !== 'income' && transactionForm.type !== 'expense')) {
+      alert('Please select a valid transaction type');
+      return;
+    }
+    
+    if (!transactionForm.date) {
+      alert('Please select a date');
+      return;
+    }
+
+    const transactionData = {
+      id: editingTransaction ? editingTransaction.id : generateId(),
+      date: transactionForm.date,
+      description: transactionForm.description.trim(),
+      amount: parseFloat(transactionForm.amount),
+      category: transactionForm.category,
+      type: transactionForm.type,
+      account_id: transactionForm.account_id || null,
+      account_type: transactionForm.account_id ? null : 'checking', // Fallback for backward compatibility
+      tags: null, // Add tags support later if needed
+      notes: null // Add notes support later if needed
+    };
+
+    console.log('Submitting transaction:', transactionData);
+
+    if (editingTransaction) {
+      await updateTransaction(transactionData);
+    } else {
+      await addTransaction(transactionData);
+    }
+
+    setTransactionModalOpen(false);
+    setEditingTransaction(null);
+    resetTransactionForm();
+  } catch (error) {
+    console.error('Transaction submission error:', error);
+    alert('Failed to save transaction: ' + error.message);
+  }
+};
 
   const handleEditTransaction = (transaction) => {
     setEditingTransaction(transaction);
@@ -316,16 +358,28 @@ const Dashboard = () => {
     setTransactionModalOpen(true);
   };
 
-  const resetTransactionForm = () => {
-    setTransactionForm({
-      date: new Date().toISOString().split('T')[0],
-      description: '',
-      amount: '',
-      category: '',
-      type: 'expense',
-      account_id: availableAccounts.length > 0 ? availableAccounts[0].id : ''
-    });
-  };
+ const resetTransactionForm = () => {
+  setTransactionForm({
+    date: new Date().toISOString().split('T')[0],
+    description: '',
+    amount: '',
+    category: '', // Don't set a default - force user to choose
+    type: 'expense',
+    account_id: availableAccounts.length > 0 ? availableAccounts[0].id : ''
+  });
+};
+
+// Also update the form validation in the modal
+const isFormValid = () => {
+  return (
+    transactionForm.description.trim() !== '' &&
+    transactionForm.amount !== '' &&
+    !isNaN(parseFloat(transactionForm.amount)) &&
+    transactionForm.category !== '' &&
+    transactionForm.type !== '' &&
+    transactionForm.date !== ''
+  );
+};
 
   // Account handlers
   const handleAccountSubmit = async () => {
@@ -959,7 +1013,11 @@ const Dashboard = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setTransactionModalOpen(false)}>Cancel</Button>
-          <Button onClick={handleTransactionSubmit} variant="contained">
+          <Button 
+            onClick={handleTransactionSubmit} 
+            variant="contained"
+            disabled={!isFormValid()}
+          >
             {editingTransaction ? 'Update' : 'Add'}
           </Button>
         </DialogActions>
