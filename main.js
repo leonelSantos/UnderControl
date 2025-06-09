@@ -1,8 +1,10 @@
-// main.js - Clean version without legacy code
+// main.js - Updated to work with modular database structure
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
+
+// Import modular database functions
 const { 
   initDatabase, 
   getAccountBalances, 
@@ -77,9 +79,9 @@ app.whenReady().then(async () => {
   try {
     console.log('🚀 Starting application...');
     
-    // Initialize database first
+    // Initialize modular database
     await initDatabase();
-    console.log('✓ Database ready');
+    console.log('✓ Modular database ready');
     
     // Setup IPC handlers
     setupIpcHandlers();
@@ -109,7 +111,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-// Setup all IPC handlers
+// Setup all IPC handlers - no changes needed, just cleaner imports
 function setupIpcHandlers() {
   console.log('Setting up IPC handlers...');
 
@@ -194,7 +196,6 @@ function setupIpcHandlers() {
     }
   });
 
-  // Handler for updating account initial balance
   ipcMain.handle('db:updateAccountInitialBalance', async (event, id, balance) => {
     try {
       console.log('IPC: Updating account initial balance:', id, balance);
