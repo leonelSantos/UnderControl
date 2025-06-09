@@ -1,4 +1,4 @@
-// src/components/Dashboard/TransactionsTab.js - Enhanced with filtering and pagination
+// src/components/Dashboard/TransactionsTab.js - Updated with Transfer support
 import React, { useState, useMemo } from 'react';
 import {
   Box,
@@ -31,7 +31,10 @@ import {
   Search as SearchIcon,
   FilterList as FilterIcon,
   Clear as ClearIcon,
-  CalendarMonth as CalendarIcon
+  CalendarMonth as CalendarIcon,
+  TrendingUp as IncomeIcon,
+  TrendingDown as ExpenseIcon,
+  SwapHoriz as TransferIcon
 } from '@mui/icons-material';
 import { categories } from './utils/constants';
 
@@ -87,7 +90,7 @@ const TransactionsTab = ({
       return null;
     }).filter(year => year !== null))].sort((a, b) => b - a);
 
-    // Get unique types
+    // Get unique types (including transfer)
     const types = [...new Set(transactions.map(t => t.type).filter(Boolean))];
 
     // Get unique categories
@@ -190,20 +193,27 @@ const TransactionsTab = ({
   // Check if any filters are active
   const hasActiveFilters = searchTerm || Object.values(filters).some(value => value !== '');
 
-  // Calculate summary for filtered transactions
+  // Calculate summary for filtered transactions (excluding transfers)
   const filteredSummary = useMemo(() => {
-    const income = filteredTransactions
+    const nonTransferTransactions = filteredTransactions.filter(t => t.type !== 'transfer');
+    
+    const income = nonTransferTransactions
       .filter(t => t.type === 'income')
       .reduce((sum, t) => sum + t.amount, 0);
     
-    const expenses = filteredTransactions
+    const expenses = nonTransferTransactions
       .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const transfers = filteredTransactions
+      .filter(t => t.type === 'transfer')
       .reduce((sum, t) => sum + t.amount, 0);
     
     return {
       total: filteredTransactions.length,
       income,
       expenses,
+      transfers,
       net: income - expenses
     };
   }, [filteredTransactions]);
@@ -211,6 +221,37 @@ const TransactionsTab = ({
   // Handle page change
   const handlePageChange = (event, page) => {
     setCurrentPage(page);
+  };
+
+  // Get transaction type icon
+  const getTransactionTypeIcon = (type) => {
+    switch (type) {
+      case 'income':
+        return <IncomeIcon color="success" fontSize="small" />;
+      case 'expense':
+        return <ExpenseIcon color="error" fontSize="small" />;
+      case 'transfer':
+        return <TransferIcon color="primary" fontSize="small" />;
+      default:
+        return null;
+    }
+  };
+
+  // Get account display name
+  const getAccountDisplayName = (transaction) => {
+    const account = availableAccounts.find(acc => 
+      acc.id === transaction.account_id || acc.id === transaction.account_type
+    );
+    return account?.label || 'Unknown Account';
+  };
+
+  // Get transfer destination account name
+  const getTransferDestinationName = (transaction) => {
+    if (transaction.type !== 'transfer') return null;
+    const toAccount = availableAccounts.find(acc => 
+      acc.id === transaction.transfer_to_account_id
+    );
+    return toAccount?.label || 'Unknown Account';
   };
 
   return (
@@ -324,7 +365,10 @@ const TransactionsTab = ({
                 <MenuItem value="">All Types</MenuItem>
                 {filterOptions.types.map((type) => (
                   <MenuItem key={type} value={type}>
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                    <Box display="flex" alignItems="center" gap={1}>
+                      {getTransactionTypeIcon(type)}
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </Box>
                   </MenuItem>
                 ))}
               </Select>
@@ -359,32 +403,32 @@ const TransactionsTab = ({
           <Box display="flex" gap={1} flexWrap="wrap">
             <Button
               size="small"
-              variant={filters.month === new Date().getMonth() + 1 && filters.year === new Date().getFullYear() ? 'contained' : 'outlined'}
+              variant={filters.month === String(new Date().getMonth() + 1).padStart(2, '0') && filters.year === String(new Date().getFullYear()) ? 'contained' : 'outlined'}
               onClick={() => {
                 const now = new Date();
                 handleFilterChange('month', String(now.getMonth() + 1).padStart(2, '0'));
-                handleFilterChange('year', now.getFullYear());
+                handleFilterChange('year', String(now.getFullYear()));
               }}
             >
               This Month
             </Button>
             <Button
               size="small"
-              variant={filters.month === new Date(new Date().setMonth(new Date().getMonth() - 1)).getMonth() + 1 ? 'contained' : 'outlined'}
+              variant={filters.month === String(new Date(new Date().setMonth(new Date().getMonth() - 1)).getMonth() + 1).padStart(2, '0') ? 'contained' : 'outlined'}
               onClick={() => {
                 const lastMonth = new Date(new Date().setMonth(new Date().getMonth() - 1));
                 handleFilterChange('month', String(lastMonth.getMonth() + 1).padStart(2, '0'));
-                handleFilterChange('year', lastMonth.getFullYear());
+                handleFilterChange('year', String(lastMonth.getFullYear()));
               }}
             >
               Last Month
             </Button>
             <Button
               size="small"
-              variant={filters.year === new Date().getFullYear() && !filters.month ? 'contained' : 'outlined'}
+              variant={filters.year === String(new Date().getFullYear()) && !filters.month ? 'contained' : 'outlined'}
               onClick={() => {
                 handleFilterChange('month', '');
-                handleFilterChange('year', new Date().getFullYear());
+                handleFilterChange('year', String(new Date().getFullYear()));
               }}
             >
               This Year
@@ -396,7 +440,7 @@ const TransactionsTab = ({
       {/* Summary Cards */}
       {hasActiveFilters && (
         <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2.4}>
             <Card sx={{ 
               borderRadius: '8px',
               borderLeft: '4px solid #8D6E63',
@@ -411,7 +455,7 @@ const TransactionsTab = ({
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2.4}>
             <Card sx={{ 
               borderRadius: '8px',
               borderLeft: '4px solid #689F38',
@@ -426,7 +470,7 @@ const TransactionsTab = ({
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2.4}>
             <Card sx={{ 
               borderRadius: '8px',
               borderLeft: '4px solid #D84315',
@@ -441,7 +485,22 @@ const TransactionsTab = ({
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2.4}>
+            <Card sx={{ 
+              borderRadius: '8px',
+              borderLeft: '4px solid #8D6E63',
+            }}>
+              <CardContent sx={{ py: 2 }}>
+                <Typography variant="body2" sx={{ color: '#5D4037' }}>
+                  Total Transfers
+                </Typography>
+                <Typography variant="h6" sx={{ color: '#8D6E63', fontWeight: 'bold' }}>
+                  ${filteredSummary.transfers.toFixed(2)}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} md={2.4}>
             <Card sx={{ 
               borderRadius: '8px',
               borderLeft: `4px solid ${filteredSummary.net >= 0 ? '#689F38' : '#D84315'}`,
@@ -508,9 +567,9 @@ const TransactionsTab = ({
               </TableRow>
             ) : (
               paginatedTransactions.map((transaction) => {
-                const account = availableAccounts.find(acc => 
-                  acc.id === transaction.account_id || acc.id === transaction.account_type
-                );
+                const fromAccount = getAccountDisplayName(transaction);
+                const toAccount = getTransferDestinationName(transaction);
+                
                 return (
                   <TableRow key={transaction.id} hover>
                     <TableCell>
@@ -518,12 +577,24 @@ const TransactionsTab = ({
                     </TableCell>
                     <TableCell>{transaction.description}</TableCell>
                     <TableCell>
-                      {categories.find(cat => cat.value === transaction.category)?.label || transaction.category}
+                      {transaction.type === 'transfer' 
+                        ? 'Transfer'
+                        : (categories.find(cat => cat.value === transaction.category)?.label || transaction.category)
+                      }
                     </TableCell>
-                    <TableCell>{account?.label || 'Unknown Account'}</TableCell>
+                    <TableCell>
+                      {transaction.type === 'transfer' 
+                        ? `${fromAccount} → ${toAccount}`
+                        : fromAccount
+                      }
+                    </TableCell>
                     <TableCell align="right">
                       <Typography 
-                        color={transaction.type === 'income' ? 'success.main' : 'error.main'}
+                        color={
+                          transaction.type === 'income' ? 'success.main' : 
+                          transaction.type === 'expense' ? 'error.main' : 
+                          'primary.main'
+                        }
                         fontWeight="bold"
                       >
                         ${Math.abs(transaction.amount).toFixed(2)}
@@ -531,9 +602,15 @@ const TransactionsTab = ({
                     </TableCell>
                     <TableCell>
                       <Chip 
+                        icon={getTransactionTypeIcon(transaction.type)}
                         label={transaction.type} 
-                        color={transaction.type === 'income' ? 'success' : 'error'}
+                        color={
+                          transaction.type === 'income' ? 'success' : 
+                          transaction.type === 'expense' ? 'error' : 
+                          'primary'
+                        }
                         size="small"
+                        variant="outlined"
                       />
                     </TableCell>
                     <TableCell align="center">

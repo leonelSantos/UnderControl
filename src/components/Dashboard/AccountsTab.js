@@ -1,4 +1,4 @@
-// src/components/Dashboard/AccountsTab.js
+// src/components/Dashboard/AccountsTab.js - Fixed function references
 import React from 'react';
 import {
   Box,
@@ -195,7 +195,7 @@ const AccountsTab = ({
                         <Box>
                           <IconButton 
                             size="small" 
-                            onClick={() => onEdit(account)}
+                            onClick={() => onEditAccount(account)}
                             sx={{ 
                               color: '#8D6E63',
                               '&:hover': { backgroundColor: 'rgba(141, 110, 99, 0.1)' }
@@ -205,7 +205,7 @@ const AccountsTab = ({
                           </IconButton>
                           <IconButton 
                             size="small" 
-                            onClick={() => onDelete(account.id)} 
+                            onClick={() => onDeleteAccount(account.id)} 
                             sx={{ 
                               color: '#D84315',
                               '&:hover': { backgroundColor: 'rgba(216, 67, 21, 0.1)' }

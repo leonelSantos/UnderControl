@@ -1,4 +1,4 @@
-// src/components/Dashboard/index.js - Main Dashboard Component
+// src/components/Dashboard/index.js - Updated with Transfer Support
 import React, { useState, useMemo } from 'react';
 import {
   Box,
@@ -67,7 +67,8 @@ const Dashboard = () => {
     amount: '',
     category: '',
     type: 'expense',
-    account_id: ''
+    account_id: '',
+    transfer_to_account_id: ''
   });
 
   // Account state
@@ -112,7 +113,8 @@ const Dashboard = () => {
         amount: '',
         category: '',
         type: 'expense',
-        account_id: availableAccounts.length > 0 ? availableAccounts[0].id : ''
+        account_id: availableAccounts.length > 0 ? availableAccounts[0].id : '',
+        transfer_to_account_id: ''
       });
       setTransactionModalOpen(true);
     },
@@ -125,7 +127,8 @@ const Dashboard = () => {
         amount: transaction.amount.toString(),
         category: transaction.category,
         type: transaction.type,
-        account_id: transaction.account_id || transaction.account_type || ''
+        account_id: transaction.account_id || transaction.account_type || '',
+        transfer_to_account_id: transaction.transfer_to_account_id || ''
       });
       setTransactionModalOpen(true);
     },
@@ -152,9 +155,27 @@ const Dashboard = () => {
           return;
         }
         
-        if (!transactionForm.category?.trim()) {
-          alert('Please select a category');
+        if (!transactionForm.account_id) {
+          alert('Please select an account');
           return;
+        }
+
+        // Validation for transfers
+        if (transactionForm.type === 'transfer') {
+          if (!transactionForm.transfer_to_account_id) {
+            alert('Please select a destination account for the transfer');
+            return;
+          }
+          if (transactionForm.account_id === transactionForm.transfer_to_account_id) {
+            alert('Source and destination accounts cannot be the same');
+            return;
+          }
+        } else {
+          // Non-transfer transactions need a category
+          if (!transactionForm.category?.trim()) {
+            alert('Please select a category');
+            return;
+          }
         }
 
         const transactionData = {
@@ -162,10 +183,12 @@ const Dashboard = () => {
           date: transactionForm.date,
           description: transactionForm.description.trim(),
           amount: parseFloat(transactionForm.amount),
-          category: transactionForm.category,
+          category: transactionForm.type === 'transfer' ? 'transfer' : transactionForm.category,
           type: transactionForm.type,
           account_id: transactionForm.account_id || null,
           account_type: transactionForm.account_id ? null : 'checking',
+          transfer_to_account_id: transactionForm.type === 'transfer' ? transactionForm.transfer_to_account_id : null,
+          transfer_to_account_type: null,
           tags: null,
           notes: null
         };

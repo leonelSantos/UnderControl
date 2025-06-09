@@ -1,8 +1,8 @@
-// preload.js - Clean bridge without legacy code
+// preload.js - Complete bridge with all required functions including transfer support
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Transaction methods
+  // Transaction methods (now with transfer support)
   addTransaction: (transaction) => ipcRenderer.invoke('db:addTransaction', transaction),
   getTransactions: () => ipcRenderer.invoke('db:getTransactions'),
   deleteTransaction: (id) => ipcRenderer.invoke('db:deleteTransaction', id),
@@ -14,6 +14,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteAccount: (id) => ipcRenderer.invoke('db:deleteAccount', id),
   updateAccountInitialBalance: (id, balance) => ipcRenderer.invoke('db:updateAccountInitialBalance', id, balance),
   getAccountBalances: () => ipcRenderer.invoke('db:getAccountBalances'),
+  
+  // Debt account management methods (for credit cards and loans)
+  addDebtAccount: (accountData) => ipcRenderer.invoke('db:addAccount', accountData),
+  updateDebtAccount: (id, accountData) => ipcRenderer.invoke('db:updateAccount', id, accountData),
+  deleteDebtAccount: (id) => ipcRenderer.invoke('db:deleteAccount', id),
+  
+  // Legacy balance update method (for backward compatibility)
+  updateAccountBalance: (accountType, balance) => {
+    // This is a legacy method - we'll try to find the account by type and update its initial balance
+    console.warn('updateAccountBalance is deprecated, use updateAccountInitialBalance instead');
+    return ipcRenderer.invoke('db:updateAccountBalance', accountType, balance);
+  },
   
   // Savings goals methods
   getSavingsGoals: () => ipcRenderer.invoke('db:getSavingsGoals'),

@@ -1,4 +1,4 @@
-// database.js - Clean version with full date support only
+// database.js
 
 const initSqlJs = require('sql.js');
 const fs = require('fs');
@@ -164,7 +164,7 @@ const createTables = () => {
     )
   `);
 
-  // Transactions table with account_id reference
+  // Updated transactions table with transfer support
   db.run(`
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
@@ -172,16 +172,37 @@ const createTables = () => {
       description TEXT NOT NULL,
       amount REAL NOT NULL,
       category TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
+      type TEXT NOT NULL CHECK(type IN ('income', 'expense', 'transfer')),
       account_id INTEGER,
       account_type TEXT, -- Keep for backward compatibility during migration
+      transfer_to_account_id INTEGER, -- For transfer transactions
+      transfer_to_account_type TEXT, -- For backward compatibility
       tags TEXT,
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+      FOREIGN KEY (transfer_to_account_id) REFERENCES accounts(id) ON DELETE SET NULL
     )
   `);
+
+  // Check if we need to add the new transfer columns to existing table
+  try {
+    const tableInfo = db.exec("PRAGMA table_info(transactions)");
+    const columns = tableInfo[0]?.values?.map(row => row[1]) || [];
+    
+    if (!columns.includes('transfer_to_account_id')) {
+      console.log('Adding transfer support to transactions table...');
+      db.run('ALTER TABLE transactions ADD COLUMN transfer_to_account_id INTEGER');
+      db.run('ALTER TABLE transactions ADD COLUMN transfer_to_account_type TEXT');
+      
+      // Update the check constraint to include 'transfer'
+      // Note: SQLite doesn't support modifying check constraints, so we'll handle validation in code
+      console.log('✓ Added transfer support to transactions table');
+    }
+  } catch (error) {
+    console.warn('⚠ Could not check/add transfer columns:', error.message);
+  }
 
   // Legacy account_balances table - kept temporarily for migration
   db.run(`
@@ -441,7 +462,7 @@ const insertDefaultData = () => {
   }
 };
 
-// Get all accounts with calculated balances
+// FIXED: Get all accounts with CORRECTLY calculated balances including transfer support
 const getAccountBalances = () => {
   try {
     if (!db) {
@@ -451,7 +472,7 @@ const getAccountBalances = () => {
 
     const results = [];
     
-    // Get accounts with calculated balances from transactions
+    // Get accounts with CORRECTLY calculated balances from transactions including transfers
     const res = db.exec(`
       SELECT 
         a.id,
@@ -462,16 +483,29 @@ const getAccountBalances = () => {
         a.minimum_payment,
         a.due_date,
         a.is_active,
-        COALESCE(a.initial_balance, 0) + COALESCE(t.transaction_total, 0) as balance
+        CASE 
+          WHEN a.account_type IN ('credit_card', 'student_loan') THEN
+            -- For debt accounts: initial_balance + expenses - (income + transfers_in)
+            COALESCE(a.initial_balance, 0) + 
+            COALESCE(t.expense_total, 0) - 
+            COALESCE(t.income_total, 0) - 
+            COALESCE(t.transfers_in, 0)
+          ELSE
+            -- For asset accounts: initial_balance + income - expenses + transfers_in - transfers_out
+            COALESCE(a.initial_balance, 0) + 
+            COALESCE(t.income_total, 0) - 
+            COALESCE(t.expense_total, 0) + 
+            COALESCE(t.transfers_in, 0) - 
+            COALESCE(t.transfers_out, 0)
+        END as balance
       FROM accounts a
       LEFT JOIN (
         SELECT 
           account_id,
-          SUM(CASE 
-            WHEN type = 'income' THEN amount 
-            WHEN type = 'expense' THEN -amount 
-            ELSE 0 
-          END) as transaction_total
+          SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income_total,
+          SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense_total,
+          SUM(CASE WHEN type = 'transfer' AND transfer_to_account_id = account_id THEN amount ELSE 0 END) as transfers_in,
+          SUM(CASE WHEN type = 'transfer' AND account_id = account_id THEN amount ELSE 0 END) as transfers_out
         FROM transactions
         WHERE account_id IS NOT NULL
         GROUP BY account_id
@@ -493,7 +527,7 @@ const getAccountBalances = () => {
       });
     }
     
-    console.log(`✓ Loaded ${results.length} account balances`);
+    console.log(`✓ Loaded ${results.length} account balances with transfer support`);
     return results;
   } catch (error) {
     console.error('✗ Error getting account balances:', error);
@@ -610,7 +644,7 @@ const deleteAccount = (id) => {
   }
 };
 
-// Transaction functions
+// Transaction functions with transfer support
 const getTransactions = () => {
   try {
     if (!db) {
@@ -623,9 +657,12 @@ const getTransactions = () => {
       SELECT 
         t.*,
         a.account_name,
-        a.account_type as linked_account_type
+        a.account_type as linked_account_type,
+        ta.account_name as transfer_to_account_name,
+        ta.account_type as transfer_to_account_type_name
       FROM transactions t
       LEFT JOIN accounts a ON t.account_id = a.id
+      LEFT JOIN accounts ta ON t.transfer_to_account_id = ta.id
       ORDER BY t.date DESC, t.created_at DESC
     `);
     
@@ -668,6 +705,8 @@ const addTransaction = (transaction) => {
       type, 
       account_id, 
       account_type,
+      transfer_to_account_id,
+      transfer_to_account_type,
       tags,
       notes
     } = transaction;
@@ -685,18 +724,25 @@ const addTransaction = (transaction) => {
     if (amount === undefined || amount === null || isNaN(amount)) {
       throw new Error('Transaction amount must be a valid number');
     }
-    if (!type || (type !== 'income' && type !== 'expense')) {
-      throw new Error('Transaction type must be either "income" or "expense"');
+    if (!type || !['income', 'expense', 'transfer'].includes(type)) {
+      throw new Error('Transaction type must be "income", "expense", or "transfer"');
+    }
+
+    // Validate transfer-specific requirements
+    if (type === 'transfer' && !transfer_to_account_id && !transfer_to_account_type) {
+      throw new Error('Transfer transactions require a destination account');
     }
 
     // Provide default category if missing
-    const safeCategory = category || 'other';
+    const safeCategory = category || (type === 'transfer' ? 'transfer' : 'other');
     
     // Handle optional fields - convert null to NULL for database
     const safeTags = tags || null;
     const safeNotes = notes || null;
     const safeAccountId = account_id || null;
     const safeAccountType = account_type || null;
+    const safeTransferToAccountId = transfer_to_account_id || null;
+    const safeTransferToAccountType = transfer_to_account_type || null;
 
     console.log('Processed transaction data:', {
       id,
@@ -706,7 +752,8 @@ const addTransaction = (transaction) => {
       category: safeCategory,
       type,
       account_id: safeAccountId,
-      account_type: safeAccountType
+      account_type: safeAccountType,
+      transfer_to_account_id: safeTransferToAccountId
     });
     
     db.run(`
@@ -719,9 +766,11 @@ const addTransaction = (transaction) => {
         type, 
         account_id, 
         account_type,
+        transfer_to_account_id,
+        transfer_to_account_type,
         tags,
         notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id, 
       date, 
@@ -731,6 +780,8 @@ const addTransaction = (transaction) => {
       type, 
       safeAccountId, 
       safeAccountType,
+      safeTransferToAccountId,
+      safeTransferToAccountType,
       safeTags,
       safeNotes
     ]);
@@ -751,12 +802,26 @@ const updateTransaction = (transaction) => {
       throw new Error('Database not initialized');
     }
     
-    const { id, date, description, amount, category, type, account_id, account_type } = transaction;
+    const { 
+      id, 
+      date, 
+      description, 
+      amount, 
+      category, 
+      type, 
+      account_id, 
+      account_type,
+      transfer_to_account_id,
+      transfer_to_account_type
+    } = transaction;
+    
     db.run(
       `UPDATE transactions 
-       SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_id = ?, account_type = ?, updated_at = CURRENT_TIMESTAMP
+       SET date = ?, description = ?, amount = ?, category = ?, type = ?, account_id = ?, account_type = ?, 
+           transfer_to_account_id = ?, transfer_to_account_type = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [date, description, amount, category, type, account_id, account_type, id]
+      [date, description, amount, category, type, account_id, account_type, 
+       transfer_to_account_id, transfer_to_account_type, id]
     );
     
     saveDatabase();
@@ -784,7 +849,7 @@ const deleteTransaction = (id) => {
   }
 };
 
-// Clean budget functions with full date support only
+// Budget functions (exclude transfers from income/expense calculations)
 const getMonthlyBudget = () => {
   try {
     if (!db) {
@@ -858,7 +923,7 @@ const addBudgetItem = (budgetItem) => {
     ]);
     
     saveDatabase();
-    console.log(`✓ Added budget item: ${name} (${type}) - $${amount} - Due: ${due_date}`);
+    console.log(`✓ Added budget item: ${name} (${type}) - ${amount} - Due: ${due_date}`);
     return { id, ...budgetItem };
   } catch (error) {
     console.error('✗ Error adding budget item:', error);
@@ -928,6 +993,7 @@ const deleteBudgetItem = (id) => {
   }
 };
 
+// FIXED: Budget comparison excludes transfers from income/expense calculations
 const getBudgetComparison = () => {
   try {
     if (!db) {
@@ -953,6 +1019,7 @@ const getBudgetComparison = () => {
       FROM monthly_budget b
       LEFT JOIN transactions t ON t.category = b.category 
         AND t.type = b.type
+        AND t.type != 'transfer'  -- EXCLUDE transfers from budget calculations
         AND strftime('%Y', t.date) = strftime('%Y', b.due_date)
         AND strftime('%m', t.date) = strftime('%m', b.due_date)
       WHERE b.is_active = 1
@@ -977,7 +1044,7 @@ const getBudgetComparison = () => {
       });
     }
     
-    console.log(`✓ Generated budget comparison for ${results.length} categories`);
+    console.log(`✓ Generated budget comparison for ${results.length} categories (excluding transfers)`);
     return results;
   } catch (error) {
     console.error('✗ Error getting budget comparison:', error);

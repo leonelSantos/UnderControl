@@ -1,4 +1,4 @@
-// src/components/Budget/utils/budgetCalculations.js
+// src/components/Budget/utils/budgetCalculations.js - Updated to exclude transfers
 
 export const calculateBudgetSummary = (monthlyBudget, selectedMonth, selectedYear) => {
   // Filter budget items for selected month/year
@@ -40,8 +40,9 @@ export const calculateBudgetSummary = (monthlyBudget, selectedMonth, selectedYea
 export const calculateActualSpending = (transactions, selectedMonth, selectedYear) => {
   const selectedDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
   
+  // EXCLUDE transfer transactions from income/expense calculations
   const monthTransactions = transactions.filter(transaction => 
-    transaction.date.startsWith(selectedDate)
+    transaction.date.startsWith(selectedDate) && transaction.type !== 'transfer'
   );
 
   const actualIncome = monthTransactions
@@ -121,59 +122,61 @@ export const calculateMonthlyComparison = (monthlyBudget, transactions) => {
     }
   });
 
-  // Add actual spending from transactions
-  transactions.forEach(transaction => {
-    if (!transaction.date) {
-      console.warn('Transaction missing date:', transaction);
-      return;
-    }
-    
-    try {
-      let monthKey;
-      
-      if (transaction.date.includes('-')) {
-        const dateParts = transaction.date.split('-');
-        if (dateParts.length >= 2) {
-          if (dateParts[0].length === 4) {
-            monthKey = `${dateParts[0]}-${dateParts[1]}`;
-          } else {
-            monthKey = `${dateParts[2]}-${dateParts[0]}`;
-          }
-        }
-      } else {
-        const parsedDate = new Date(transaction.date);
-        if (!isNaN(parsedDate.getTime())) {
-          const year = parsedDate.getFullYear();
-          const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-          monthKey = `${year}-${month}`;
-        }
-      }
-      
-      if (!monthKey) {
-        console.warn('Could not parse transaction date:', transaction.date);
+  // Add actual spending from transactions (EXCLUDING transfers)
+  transactions
+    .filter(transaction => transaction.type !== 'transfer') // EXCLUDE transfers
+    .forEach(transaction => {
+      if (!transaction.date) {
+        console.warn('Transaction missing date:', transaction);
         return;
       }
       
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { 
-          budgetIncome: 0, 
-          budgetExpenses: 0, 
-          actualIncome: 0, 
-          actualExpenses: 0 
-        };
+      try {
+        let monthKey;
+        
+        if (transaction.date.includes('-')) {
+          const dateParts = transaction.date.split('-');
+          if (dateParts.length >= 2) {
+            if (dateParts[0].length === 4) {
+              monthKey = `${dateParts[0]}-${dateParts[1]}`;
+            } else {
+              monthKey = `${dateParts[2]}-${dateParts[0]}`;
+            }
+          }
+        } else {
+          const parsedDate = new Date(transaction.date);
+          if (!isNaN(parsedDate.getTime())) {
+            const year = parsedDate.getFullYear();
+            const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+            monthKey = `${year}-${month}`;
+          }
+        }
+        
+        if (!monthKey) {
+          console.warn('Could not parse transaction date:', transaction.date);
+          return;
+        }
+        
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { 
+            budgetIncome: 0, 
+            budgetExpenses: 0, 
+            actualIncome: 0, 
+            actualExpenses: 0 
+          };
+        }
+        
+        const amount = parseFloat(transaction.amount) || 0;
+        
+        if (transaction.type === 'income') {
+          monthlyData[monthKey].actualIncome += amount;
+        } else if (transaction.type === 'expense') {
+          monthlyData[monthKey].actualExpenses += amount;
+        }
+      } catch (error) {
+        console.warn('Error processing transaction date:', transaction.date, error);
       }
-      
-      const amount = parseFloat(transaction.amount) || 0;
-      
-      if (transaction.type === 'income') {
-        monthlyData[monthKey].actualIncome += amount;
-      } else if (transaction.type === 'expense') {
-        monthlyData[monthKey].actualExpenses += amount;
-      }
-    } catch (error) {
-      console.warn('Error processing transaction date:', transaction.date, error);
-    }
-  });
+    });
 
   // Convert to sorted array for chart
   const sortedMonths = Object.keys(monthlyData)

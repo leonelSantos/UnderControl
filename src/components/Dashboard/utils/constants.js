@@ -1,4 +1,4 @@
-// src/components/Dashboard/utils/constants.js
+// src/components/Dashboard/utils/constants.js - Updated with Transfer support
 export const categories = [
   { value: 'food', label: 'Food & Dining' },
   { value: 'transport', label: 'Transportation' },
@@ -15,7 +15,7 @@ export const categories = [
   { value: 'insurance', label: 'Insurance' },
   { value: 'taxes', label: 'Taxes' },
   { value: 'debt_payment', label: 'Debt Payment' },
-  { value: 'transfer', label: 'Account Transfer' },
+  { value: 'transfer', label: 'Account Transfer' }, // Added for transfer transactions
   { value: 'other', label: 'Other' }
 ];
 
