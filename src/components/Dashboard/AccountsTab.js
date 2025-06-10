@@ -1,4 +1,4 @@
-// src/components/Dashboard/AccountsTab.js - Fixed function references
+// src/components/Dashboard/AccountsTab.js - Fixed to include transfers in payments calculation
 import React from 'react';
 import {
   Box,
@@ -31,6 +31,16 @@ const AccountsTab = ({
   onEditAccount,
   onDeleteAccount
 }) => {
+  // Helper function to calculate payments made (income + transfers in)
+  const calculatePaymentsMade = (account) => {
+    return (account.totalIncome || 0) + (account.totalTransfersIn || 0);
+  };
+
+  // Helper function to calculate charges/interest (expenses + transfers out)
+  const calculateChargesInterest = (account) => {
+    return (account.totalExpenses || 0) + (account.totalTransfersOut || 0);
+  };
+
   return (
     <>
       <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
@@ -104,10 +114,10 @@ const AccountsTab = ({
                           <IncomeIcon color="success" fontSize="small" />
                           <Box>
                             <Typography variant="body2" color="textSecondary">
-                              Total Income
+                              Deposits + Transfers In
                             </Typography>
                             <Typography variant="body1" color="success.main" fontWeight="bold">
-                              ${account.totalIncome.toFixed(2)}
+                              ${((account.totalIncome || 0) + (account.totalTransfersIn || 0)).toFixed(2)}
                             </Typography>
                           </Box>
                         </Box>
@@ -117,10 +127,10 @@ const AccountsTab = ({
                           <ExpenseIcon color="error" fontSize="small" />
                           <Box>
                             <Typography variant="body2" color="textSecondary">
-                              Total Expenses
+                              Expenses + Transfers Out
                             </Typography>
                             <Typography variant="body1" color="error.main" fontWeight="bold">
-                              ${account.totalExpenses.toFixed(2)}
+                              ${((account.totalExpenses || 0) + (account.totalTransfersOut || 0)).toFixed(2)}
                             </Typography>
                           </Box>
                         </Box>
@@ -220,7 +230,7 @@ const AccountsTab = ({
                         ${Math.abs(account.calculatedBalance).toFixed(2)}
                       </Typography>
                       
-                      {/* Income and Expense Breakdown for Debt Accounts */}
+                      {/* Payments and Charges Breakdown for Debt Accounts */}
                       <Grid container spacing={2} sx={{ mb: 2 }}>
                         <Grid item xs={6}>
                           <Box display="flex" alignItems="center" gap={1}>
@@ -230,7 +240,10 @@ const AccountsTab = ({
                                 Payments Made
                               </Typography>
                               <Typography variant="body1" color="success.main" fontWeight="bold">
-                                ${account.totalIncome.toFixed(2)}
+                                ${calculatePaymentsMade(account).toFixed(2)}
+                              </Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                Income: ${(account.totalIncome || 0).toFixed(2)} + Transfers: ${(account.totalTransfersIn || 0).toFixed(2)}
                               </Typography>
                             </Box>
                           </Box>
@@ -243,7 +256,10 @@ const AccountsTab = ({
                                 Charges/Interest
                               </Typography>
                               <Typography variant="body1" color="error.main" fontWeight="bold">
-                                ${account.totalExpenses.toFixed(2)}
+                                ${calculateChargesInterest(account).toFixed(2)}
+                              </Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                Expenses: ${(account.totalExpenses || 0).toFixed(2)} + Cash Advances: ${(account.totalTransfersOut || 0).toFixed(2)}
                               </Typography>
                             </Box>
                           </Box>

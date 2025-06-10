@@ -1,4 +1,5 @@
-// src/components/Dashboard/utils/calculations.js - Fixed for correct credit card calculations with transfer support
+// src/components/Dashboard/utils/calculations.js - Fixed to include transfer totals for proper display
+
 export const calculateBalances = (accountBalances, transactions) => {
   const balances = {};
   
@@ -17,9 +18,10 @@ export const calculateBalances = (accountBalances, transactions) => {
   });
 
   // Calculate transaction totals for display purposes
-  // Note: The actual balances are calculated correctly in the database now
   transactions.forEach(transaction => {
     const accountKey = transaction.account_id || transaction.account_type;
+    
+    // Handle transactions FROM this account (source account)
     if (balances[accountKey]) {
       balances[accountKey].transactionCount++;
       
@@ -28,15 +30,20 @@ export const calculateBalances = (accountBalances, transactions) => {
       } else if (transaction.type === 'expense') {
         balances[accountKey].totalExpenses += transaction.amount;
       } else if (transaction.type === 'transfer') {
-        // For transfers, track both outgoing and incoming
+        // Money going OUT of this account
         balances[accountKey].totalTransfersOut += transaction.amount;
-        balances[accountKey].transactionCount--; // Don't double count for display
+      }
+    }
+    
+    // Handle transfers TO this account (destination account)
+    if (transaction.type === 'transfer' && transaction.transfer_to_account_id) {
+      const toAccountKey = transaction.transfer_to_account_id;
+      if (balances[toAccountKey]) {
+        // Money coming IN to this account
+        balances[toAccountKey].totalTransfersIn += transaction.amount;
         
-        // Also track incoming transfers
-        const toAccountKey = transaction.transfer_to_account_id || transaction.transfer_to_account_type;
-        if (balances[toAccountKey]) {
-          balances[toAccountKey].totalTransfersIn += transaction.amount;
-        }
+        // Only count the transaction once, so don't increment transactionCount here
+        // since it's already counted in the source account
       }
     }
   });

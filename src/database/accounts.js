@@ -1,4 +1,4 @@
-// src/database/accounts.js - Account management operations
+// src/database/accounts.js - Account management operations (FIXED TRANSFER BUG)
 
 const { executeSQL, querySQL, saveDatabase } = require('./core');
 
@@ -17,36 +17,69 @@ const getAccountBalances = () => {
         a.is_active,
         CASE 
           WHEN a.account_type IN ('credit_card', 'student_loan') THEN
-            -- For debt accounts: initial_balance + expenses - (income + transfers_in)
+            -- For debt accounts: initial_balance + expenses + transfers_out - (income + transfers_in)
+            -- transfers_in = payments TO the credit card (reduces debt)
+            -- transfers_out = cash advances FROM the credit card (increases debt)
             COALESCE(a.initial_balance, 0) + 
-            COALESCE(t.expense_total, 0) - 
-            COALESCE(t.income_total, 0) - 
-            COALESCE(t.transfers_in, 0)
+            COALESCE(expense_out.expense_total, 0) + 
+            COALESCE(transfers_from_this.transfers_out, 0) - 
+            COALESCE(income_in.income_total, 0) - 
+            COALESCE(transfers_to_this.transfers_in, 0)
           ELSE
-            -- For asset accounts: initial_balance + income - expenses + transfers_in - transfers_out
+            -- For asset accounts: initial_balance + income + transfers_in - expenses - transfers_out
             COALESCE(a.initial_balance, 0) + 
-            COALESCE(t.income_total, 0) - 
-            COALESCE(t.expense_total, 0) + 
-            COALESCE(t.transfers_in, 0) - 
-            COALESCE(t.transfers_out, 0)
+            COALESCE(income_in.income_total, 0) + 
+            COALESCE(transfers_to_this.transfers_in, 0) - 
+            COALESCE(expense_out.expense_total, 0) - 
+            COALESCE(transfers_from_this.transfers_out, 0)
         END as balance
       FROM accounts a
+      
+      -- Income transactions TO this account
       LEFT JOIN (
         SELECT 
           account_id,
-          SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income_total,
-          SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense_total,
-          SUM(CASE WHEN type = 'transfer' AND transfer_to_account_id = account_id THEN amount ELSE 0 END) as transfers_in,
-          SUM(CASE WHEN type = 'transfer' AND account_id = account_id THEN amount ELSE 0 END) as transfers_out
+          SUM(amount) as income_total
         FROM transactions
-        WHERE account_id IS NOT NULL
+        WHERE type = 'income' AND account_id IS NOT NULL
         GROUP BY account_id
-      ) t ON a.id = t.account_id
+      ) income_in ON a.id = income_in.account_id
+      
+      -- Expense transactions FROM this account  
+      LEFT JOIN (
+        SELECT 
+          account_id,
+          SUM(amount) as expense_total
+        FROM transactions
+        WHERE type = 'expense' AND account_id IS NOT NULL
+        GROUP BY account_id
+      ) expense_out ON a.id = expense_out.account_id
+      
+      -- Transfer transactions TO this account (credit card payments, deposits)
+      LEFT JOIN (
+        SELECT 
+          transfer_to_account_id,
+          SUM(amount) as transfers_in
+        FROM transactions
+        WHERE type = 'transfer' AND transfer_to_account_id IS NOT NULL
+        GROUP BY transfer_to_account_id
+      ) transfers_to_this ON a.id = transfers_to_this.transfer_to_account_id
+      
+      -- Transfer transactions FROM this account (withdrawals, payments out)
+      LEFT JOIN (
+        SELECT 
+          account_id,
+          SUM(amount) as transfers_out
+        FROM transactions
+        WHERE type = 'transfer' AND account_id IS NOT NULL
+        GROUP BY account_id
+      ) transfers_from_this ON a.id = transfers_from_this.account_id
+      
       WHERE a.is_active = 1
       ORDER BY a.account_type, a.account_name
     `);
     
-    console.log(`✓ Loaded ${results.length} account balances with transfer support`);
+    console.log(`✓ Loaded ${results.length} account balances with corrected transfer support`);
     return results;
   } catch (error) {
     console.error('✗ Error getting account balances:', error);

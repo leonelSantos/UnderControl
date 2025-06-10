@@ -1,4 +1,4 @@
-// src/database/budget.js - Budget management operations
+// src/database/budget.js - Budget management operations (FIXED - includes transfers)
 
 const { executeSQL, querySQL, saveDatabase } = require('./core');
 
@@ -118,7 +118,7 @@ const deleteBudgetItem = (id) => {
   }
 };
 
-// Get budget comparison (budgeted vs actual, excluding transfers)
+// Get budget comparison (budgeted vs actual, NOW INCLUDING transfers as expenses)
 const getBudgetComparison = () => {
   try {
     const results = querySQL(`
@@ -132,9 +132,11 @@ const getBudgetComparison = () => {
         b.is_recurring,
         COALESCE(SUM(ABS(t.amount)), 0) as actual
       FROM monthly_budget b
-      LEFT JOIN transactions t ON t.category = b.category 
-        AND t.type = b.type
-        AND t.type != 'transfer'  -- EXCLUDE transfers from budget calculations
+      LEFT JOIN transactions t ON (
+        (t.category = b.category AND t.type = b.type AND t.type != 'transfer') 
+        OR 
+        (b.type = 'expense' AND t.type = 'transfer')  -- Include transfers as expenses
+      )
         AND strftime('%Y', t.date) = strftime('%Y', b.due_date)
         AND strftime('%m', t.date) = strftime('%m', b.due_date)
       WHERE b.is_active = 1
@@ -149,7 +151,7 @@ const getBudgetComparison = () => {
       percentage: item.budgeted > 0 ? (item.actual / item.budgeted * 100).toFixed(2) : 0
     }));
     
-    console.log(`✓ Generated budget comparison for ${processedResults.length} categories (excluding transfers)`);
+    console.log(`✓ Generated budget comparison for ${processedResults.length} categories (including transfers as expenses)`);
     return processedResults;
   } catch (error) {
     console.error('✗ Error getting budget comparison:', error);
