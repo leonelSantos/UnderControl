@@ -1,4 +1,4 @@
-// src/components/Dashboard/OverviewTab.js - Updated with Net Worth Trend Chart
+// src/components/Dashboard/OverviewTab.js - Updated with Net Worth Trend Chart and Filler plugin
 import React, { useMemo, useRef, useEffect } from 'react';
 import {
   Paper,
@@ -24,11 +24,12 @@ import {
   CategoryScale,
   LinearScale,
   PointElement,
-  LineElement
+  LineElement,
+  Filler // Add this import
 } from 'chart.js';
 
-// Register Chart.js components - CRITICAL: This must be done
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement);
+// Register Chart.js components - CRITICAL: This must be done including Filler
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler);
 
 const OverviewTab = ({ financialSummary, transactions, availableAccounts, onAddTransaction }) => {
   const chartRef = useRef(null);
@@ -229,6 +230,9 @@ const OverviewTab = ({ financialSummary, transactions, availableAccounts, onAddT
             return `${context.dataset.label}: ${formatted}`;
           }
         }
+      },
+      filler: {
+        propagate: false,
       },
     },
     scales: {

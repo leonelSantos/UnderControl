@@ -1,4 +1,4 @@
-// src/utils/chartConfig.js - Updated with earthy color scheme
+// src/utils/chartConfig.js - Updated with Filler plugin and earthy color scheme
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -9,10 +9,11 @@ import {
   ArcElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler // Add this import
 } from 'chart.js';
 
-// Register all Chart.js components globally
+// Register all Chart.js components globally - INCLUDING Filler
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -22,7 +23,8 @@ ChartJS.register(
   ArcElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler // Register the Filler plugin
 );
 
 export { ChartJS };
@@ -67,7 +69,7 @@ export const commonChartOptions = {
         padding: 20,
         color: earthyColors.text,
         font: {
-          family: 'Roboto',
+          family: 'Inter',
           size: 12,
         },
       },
@@ -76,7 +78,7 @@ export const commonChartOptions = {
       display: false, // Usually handled by Material-UI Typography
       color: earthyColors.text,
       font: {
-        family: 'Roboto',
+        family: 'Inter',
         size: 16,
         weight: 'bold',
       },
@@ -88,6 +90,9 @@ export const commonChartOptions = {
       borderColor: earthyColors.primary,
       borderWidth: 1,
       cornerRadius: 8,
+    },
+    filler: {
+      propagate: false,
     },
   },
   elements: {
@@ -132,7 +137,7 @@ export const barOptions = {
       ticks: {
         color: earthyColors.text,
         font: {
-          family: 'Roboto',
+          family: 'Inter',
           size: 11,
         },
       },
@@ -146,7 +151,7 @@ export const barOptions = {
       ticks: {
         color: earthyColors.text,
         font: {
-          family: 'Roboto',
+          family: 'Inter',
           size: 11,
         },
         callback: function(value) {
@@ -163,6 +168,12 @@ export const lineOptions = {
     intersect: false,
     mode: 'index',
   },
+  plugins: {
+    ...commonChartOptions.plugins,
+    filler: {
+      propagate: false,
+    },
+  },
   scales: {
     x: {
       grid: {
@@ -171,7 +182,7 @@ export const lineOptions = {
       ticks: {
         color: earthyColors.text,
         font: {
-          family: 'Roboto',
+          family: 'Inter',
           size: 11,
         },
       },
@@ -185,7 +196,7 @@ export const lineOptions = {
       ticks: {
         color: earthyColors.text,
         font: {
-          family: 'Roboto',
+          family: 'Inter',
           size: 11,
         },
         callback: function(value) {
