@@ -25,9 +25,6 @@ import {
 // Import your components
 import Dashboard from './components/Dashboard';
 import Budget from './components/Budget';
-import SavingsGoals from './components/SavingsGoals';
-import Analytics from './components/Analytics';
-
 // Context for sharing data across components
 import { DataProvider } from './context/DataContext';
 
@@ -59,8 +56,6 @@ function App() {
   const tabs = [
     { label: 'Dashboard', icon: <DashboardIcon />, component: Dashboard },
     { label: 'Budget', icon: <BudgetIcon />, component: Budget },
-    { label: 'Savings', icon: <SavingsIcon />, component: SavingsGoals },
-    { label: 'Analytics', icon: <AnalyticsIcon />, component: Analytics },
   ];
 
   useEffect(() => {
